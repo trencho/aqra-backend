@@ -92,6 +92,10 @@ tests/                     # pytest (Flask-Testing) endpoint tests
   served only after it loads back and verifies, by atomically replacing the `current` pointer;
   the last three runs stay as a rollback. The evaluation endpoints read the current run's
   manifest.
+- **Forecasts**: `src/services/forecast.py`. The worker computes each sensor's next 25 hours
+  (one data read per sensor, UTC throughout, the model's own lag features) and publishes them to
+  Mongo first, then to an atomically replaced `predictions.json`; the API serves the file while it
+  starts at the upcoming hour and the database copy otherwise.
 - **Data pipeline**: `preparation` (fetch) → `processing` (clean/feature-engineer) → `modeling`
   (train/evaluate) → forecasts + `visualization` plots.
 
@@ -215,6 +219,5 @@ running Mongo version before merging them.
 
 [`ROADMAP.md`](ROADMAP.md) holds the full list with a first step for each item. In order:
 
-1. Extract a forecast service with UTC time, an in-process model cache and one data read per sensor.
-2. Make MongoDB the single source of truth, with the processed CSVs as a rebuildable cache.
-3. Publish privacy, terms, cookie, data-source and disclaimer pages (pending FEIT review).
+1. Make MongoDB the single source of truth, with the processed CSVs as a rebuildable cache.
+2. Publish privacy, terms, cookie, data-source and disclaimer pages (pending FEIT review).

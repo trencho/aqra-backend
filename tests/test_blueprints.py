@@ -26,6 +26,7 @@ import api.config  # noqa: F401
 from api import blueprints
 from api.blueprints import fetch_dataframe
 from api.config.cache import cache
+from processing.forecast_data import epoch, forecast_horizon, utc_now
 from repository import get_repository
 
 _CSV = "time,pm2_5\n1704067200,12.0\n1704070800,13.0\n"
@@ -104,8 +105,9 @@ def test_an_unexpected_error_propagates_rather_than_becoming_a_404(
 @pytest.fixture
 def forecast_view(tmp_path, monkeypatch):
     from api.blueprints.forecast import forecast as view
+    from services import forecast as service
 
-    monkeypatch.setattr(view, "DATA_PROCESSED_PATH", tmp_path)
+    monkeypatch.setattr(service, "DATA_PROCESSED_PATH", tmp_path)
     sensor_dir = tmp_path / "skopje" / "1000"
     sensor_dir.mkdir(parents=True)
     return view, sensor_dir
@@ -126,7 +128,7 @@ def test_serves_the_cached_forecast_when_it_is_for_the_upcoming_hour(
     # The integer Unix timestamp fetch_forecast_result writes into the file. Until this
     # PR the branch below compared it against an aware datetime, so it never matched and
     # this fast path was dead: the file was read and discarded on every single request.
-    upcoming = int(view.next_hour(view.current_hour()).timestamp())
+    upcoming = epoch(forecast_horizon(utc_now())[0])
     (sensor_dir / "predictions.json").write_text(
         dumps([{"time": upcoming, "pm2_5": 12.0}])
     )
@@ -147,7 +149,7 @@ def test_falls_back_to_the_stored_forecast_when_the_cached_file_is_stale(
     # Without this the "compare the same thing the writer produced" change could be
     # satisfied by comparing nothing at all.
     view, sensor_dir = forecast_view
-    stale = int(view.next_hour(view.current_hour()).timestamp()) - 3600
+    stale = epoch(forecast_horizon(utc_now())[0]) - 3600
     (sensor_dir / "predictions.json").write_text(
         dumps([{"time": stale, "pm2_5": 12.0}])
     )
@@ -164,7 +166,7 @@ def test_falls_back_to_the_stored_forecast_when_the_cached_file_is_missing(
     view, _ = forecast_view
     _stub_repository(monkeypatch, {"data": ["from the database"]})
 
-    with caplog.at_level("DEBUG", logger=view.__name__):
+    with caplog.at_level("DEBUG", logger="services.forecast"):
         forecast = view.return_sensor_forecast_results(_FORECAST_CITY, _FORECAST_SENSOR)
 
     assert forecast["data"] == ["from the database"]
@@ -180,7 +182,7 @@ def test_falls_back_to_the_stored_forecast_when_the_cached_file_is_corrupt(
     (sensor_dir / "predictions.json").write_text("{not json")
     _stub_repository(monkeypatch, {"data": ["from the database"]})
 
-    with caplog.at_level("DEBUG", logger=view.__name__):
+    with caplog.at_level("DEBUG", logger="services.forecast"):
         forecast = view.return_sensor_forecast_results(_FORECAST_CITY, _FORECAST_SENSOR)
 
     assert forecast["data"] == ["from the database"]

@@ -1,10 +1,10 @@
 """Integration tests for the forecast computation path (``processing/forecast_data``).
 
 Unlike the unit tests, these wire the whole pipeline together with real seeded
-artifacts under a temp tree: a trained-and-saved model plus processed weather/pollution
-CSVs. ``forecast_city_sensor`` then exercises model loading -> two-CSV summary read ->
-the 24-step recursive forecast loop -> feature generation/scaling -> prediction, and
-``fetch_forecast_result`` aggregates the per-pollutant series into the timestamp dict.
+artifacts under a temp tree: a published model plus processed weather/pollution CSVs.
+``fetch_forecast_result`` exercises the single per-sensor read -> model loading -> the
+25-step recursive forecast loop -> feature generation/scaling -> prediction, and
+aggregates the per-pollutant series into the timestamp dict.
 
 The model is trained on time-derived features (hour/month cyclic encodings), which are
 defined for future steps from the datetime index alone — so the recursion yields real
@@ -14,7 +14,15 @@ predictions without needing future weather rows (which a static fixture can't pr
 import numpy as np
 import pytest
 from flask import Flask
-from pandas import DataFrame, DatetimeIndex, Series, Timedelta, date_range
+from pandas import (
+    DataFrame,
+    DatetimeIndex,
+    Series,
+    Timedelta,
+    date_range,
+    read_csv,
+    to_datetime,
+)
 
 # Import the config package first so the api/preparation/processing chain initialises
 # in order — importing a ``processing`` submodule first hits a circular import.
@@ -80,24 +88,68 @@ def forecast_env(tmp_path, monkeypatch, publish_model):
     return processed, models_path
 
 
-def test_forecast_city_sensor_produces_finite_forecast(app_context, forecast_env):
-    result = forecast_data.forecast_city_sensor("skopje", "1000", "pm2_5")
+def _series(result, pollutant):
+    times = sorted(result)
+    return Series(
+        [result[time].get(pollutant) for time in times],
+        index=to_datetime(times, unit="s"),
+        dtype="float64",
+    )
 
-    assert isinstance(result, Series)
+
+def test_fetch_forecast_result_produces_a_finite_forecast(app_context, forecast_env):
+    result = forecast_data.fetch_forecast_result(
+        {"cityName": "skopje", "countryCode": "MK"}, {"sensorId": "1000"}
+    )
+    series = _series(result, "pm2_5")
+
     # 25 horizon steps, all kept: the opening forecast is no longer seeded with a
     # fabricated 0.0, so there is nothing to discard.
-    assert len(result) == 25
-    assert isinstance(result.index, DatetimeIndex)
-    assert result.index[1] - result.index[0] == Timedelta(hours=1)
+    assert len(series) == 25
+    assert isinstance(series.index, DatetimeIndex)
+    assert series.index[1] - series.index[0] == Timedelta(hours=1)
     # Real predictions flowed through the pipeline (not the all-NaN degenerate path),
     # and they land in the trained target's positive range.
-    assert result.notna().any()
-    assert (result.dropna() > 0).all()
+    assert series.notna().any()
+    assert (series.dropna() > 0).all()
 
 
-def test_forecast_city_sensor_without_model_returns_none(app_context, forecast_env):
-    # No model was saved for "co", so there is nothing to forecast with.
-    assert forecast_data.forecast_city_sensor("skopje", "1000", "co") is None
+def test_a_pollutant_without_a_model_is_left_out(app_context, forecast_env):
+    # No model was published for pm10, though the sensor reports it.
+    result = forecast_data.fetch_forecast_result(
+        {"cityName": "skopje", "countryCode": "MK"}, {"sensorId": "1000"}
+    )
+    assert all("pm10" not in entry for entry in result.values())
+
+
+def test_a_model_trained_on_lags_forecasts_with_those_lags(
+    app_context, forecast_env, publish_model
+):
+    """The forecast loop used to re-select lags from the last 51 values.
+
+    That picks a different set from training, and any lag the model needed and the rerun
+    dropped raised at `features[model_features]`, so every hour came back NaN. Lags 7, 9 and
+    10 are chosen here because a re-selection over this series does not produce all of them.
+    """
+    processed, _ = forecast_env
+    pollution = read_csv(processed / "skopje" / "1000" / "pollution.csv")
+    target = Series(
+        pollution["pm2_5"].to_numpy(),
+        index=to_datetime(pollution["time"], unit="s"),
+    )
+    lag_names = ["lag_7", "lag_9", "lag_10"]
+    features = generate_features(target, fixed_lags=[7, 9, 10])[
+        lag_names + _TIME_FEATURES
+    ].dropna()
+    model = make_model("LinearRegressionModel")
+    model.train(features, target.loc[features.index])
+    _, scaler = fit_scaler(features)
+    publish_model("skopje", "1000", "pm2_5", model, lag_names + _TIME_FEATURES, scaler)
+
+    result = forecast_data.fetch_forecast_result(
+        {"cityName": "skopje", "countryCode": "MK"}, {"sensorId": "1000"}
+    )
+    assert _series(result, "pm2_5").notna().all()
 
 
 def test_fetch_forecast_result_aggregates_by_timestamp(app_context, forecast_env):
