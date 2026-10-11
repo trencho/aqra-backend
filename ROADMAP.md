@@ -5,14 +5,10 @@ its first step. Items are ordered by value within each section. Finished work mo
 
 ## Backend: architecture
 
-1. **A forecast service.** The forecast blueprint reads files and falls back to the database inline,
-   the recursive forecast mixes naive local time with UTC, and its cache never hits because it is
-   keyed on a model object. First step: extract `ForecastService` with an injected clock and key the
-   model cache on the registry version.
-2. **MongoDB as the single source of truth.** Readings are stored three times (Mongo, raw CSV,
+1. **MongoDB as the single source of truth.** Readings are stored three times (Mongo, raw CSV,
    processed CSV) and rebuilt from Mongo on every boot. First step: give `weather` and `pollution` a
    unique `(sensorId, time)` index with upsert writes, then rebuild the CSVs from Mongo as a cache.
-3. **Retire dead code.** `feature_imputation.py`, four regression models that
+2. **Retire dead code.** `feature_imputation.py`, four regression models that
    are never enabled, and helpers with no callers. First step: delete them with their tests, keeping
    the test that pins `get_dummies` without `drop_first`.
 

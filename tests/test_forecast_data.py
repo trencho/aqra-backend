@@ -76,25 +76,21 @@ def test_recursive_forecast_logs_each_step_it_could_not_predict(
         {"pm2_5": [10.0, 11.0, 12.0]},
         index=date_range("2026-01-01", periods=3, freq="1h"),
     )
-    monkeypatch.setattr(
-        forecast_data, "fetch_summary_dataframe", lambda *args, **kwargs: frame
-    )
-    monkeypatch.setattr(forecast_data, "DATA_PROCESSED_PATH", tmp_path)
 
-    def unavailable(*args, **kwargs):
-        raise RuntimeError("upstream feature service is down")
-
-    monkeypatch.setattr(forecast_data, "forecast_sensor", unavailable)
+    class Unavailable:
+        def predict(self, features):
+            raise RuntimeError("the model cannot predict")
 
     with caplog.at_level("ERROR", logger=forecast_data.__name__):
         result = forecast_data.recursive_forecast(
-            "skopje",
-            "1000",
+            frame,
+            {},
             "pm2_5",
-            model=None,
+            model=Unavailable(),
             model_features=[],
             scaler=None,
-            n_steps=3,
+            horizon=date_range("2026-01-01 03:00", periods=3, freq="1h"),
+            label="skopje - 1000",
         )
 
     # Still a full-length series of NaN: the loop runs to the end of the horizon.
@@ -176,3 +172,16 @@ def test_disagreeing_artefacts_are_refused():
 
     with pytest.raises(forecast_data.ModelArtifactMismatch, match="feature list"):
         forecast_data.verify_pipeline(Path("d"), manifest, object(), ["a"], Scaler())
+
+
+def test_the_horizon_starts_at_the_next_utc_hour_whatever_the_local_zone():
+    from datetime import datetime, timedelta, timezone
+
+    skopje_summer = timezone(timedelta(hours=2))
+    now = datetime(2026, 7, 1, 10, 30, tzinfo=skopje_summer)  # 08:30 UTC
+    horizon = forecast_data.forecast_horizon(now, n_steps=2)
+    assert list(horizon.hour) == [9, 10]
+    assert horizon.tz is None  # naive UTC, like the CSV index
+    assert forecast_data.epoch(horizon[0]) == int(
+        datetime(2026, 7, 1, 9, tzinfo=timezone.utc).timestamp()
+    )

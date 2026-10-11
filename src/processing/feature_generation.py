@@ -25,7 +25,9 @@ def get_season(time: datetime) -> str:
 
 
 def encode_categorical_data(dataframe: DataFrame) -> None:
-    obj_columns = dataframe.select_dtypes("object").columns
+    # "str" named explicitly: pandas 3 still folds it into "object" here but warns, once per
+    # call, and the forecast loop calls this for every hour of every pollutant.
+    obj_columns = dataframe.select_dtypes(include=["object", "str"]).columns
     dataframe[obj_columns] = dataframe[obj_columns].astype("category")
     cat_columns = dataframe.select_dtypes("category").columns
     dataframe[cat_columns] = dataframe[cat_columns].apply(lambda x: x.cat.codes)
@@ -103,8 +105,37 @@ def generate_time_features(target) -> DataFrame:
     return features
 
 
-def generate_features(target: Series, lags: int = 24) -> DataFrame:
-    lag_features = generate_lag_features(target, lags)
+def lags_of(feature_names: list) -> list[int]:
+    """The lag offsets a trained model uses, read back from its `lag_<n>` feature names."""
+    return sorted(
+        int(name.removeprefix("lag_"))
+        for name in feature_names
+        if name.startswith("lag_") and name.removeprefix("lag_").isdigit()
+    )
+
+
+def fixed_lag_features(target: Series, lags: list[int]) -> DataFrame:
+    features = DataFrame(index=target.index)
+    for lag in lags:
+        features[f"lag_{lag}"] = target.shift(lag)
+    return features
+
+
+def generate_features(
+    target: Series, lags: int = 24, fixed_lags: list[int] | None = None
+) -> DataFrame:
+    """Lag and time features for `target`.
+
+    Training picks the lags by partial autocorrelation. Inference must NOT: it passes the
+    model's own lags as `fixed_lags`. The forecast loop used to rerun the selection on the last
+    51 values, which picks a different set; any lag the model was trained on and the rerun
+    dropped raised a KeyError at `features[model_features]`, and every hour came back NaN.
+    """
+    lag_features = (
+        generate_lag_features(target, lags)
+        if fixed_lags is None
+        else fixed_lag_features(target, fixed_lags)
+    )
     time_features = generate_time_features(target)
     features = (
         time_features

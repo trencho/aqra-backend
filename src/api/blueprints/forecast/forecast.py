@@ -1,12 +1,10 @@
 from http import HTTPStatus
-from json import loads
-from logging import getLogger
 
 from flasgger import swag_from
 from flask import Blueprint, Response, jsonify
 
 from api.config.cache import cache
-from definitions import CACHE_TIMEOUTS, DATA_PROCESSED_PATH
+from definitions import CACHE_TIMEOUTS
 from preparation import (
     calculate_nearest_city,
     calculate_nearest_sensor,
@@ -14,10 +12,7 @@ from preparation import (
     check_sensor,
     read_sensors,
 )
-from processing import current_hour, next_hour
-from repository import get_repository
-
-logger = getLogger(__name__)
+from services.forecast import read_forecast
 
 forecast_blueprint = Blueprint("forecast", __name__)
 
@@ -144,49 +139,8 @@ def return_city_forecast_results(city: dict) -> dict:
 
 def return_sensor_forecast_results(city: dict, sensor: dict) -> dict:
     sensor_position = sensor["position"].split(",")
-    forecast = {
+    return {
         "latitude": float(sensor_position[0]),
         "longitude": float(sensor_position[1]),
+        "data": read_forecast(city, sensor),
     }
-    try:
-        data = loads(
-            (
-                DATA_PROCESSED_PATH
-                / city["cityName"]
-                / sensor["sensorId"]
-                / "predictions.json"
-            ).read_text()
-        )
-        # `time` is the integer Unix timestamp that fetch_forecast_result writes, derived
-        # from a naive `next_hour(current_hour())`. This compared it against an aware
-        # DATETIME instead -- `int == datetime` is False for every value of both, so the
-        # branch had never been taken: every request parsed predictions.json, threw the
-        # result away and queried the database anyway. Compare the same thing the writer
-        # produced.
-        if data[0]["time"] == int(next_hour(current_hour()).timestamp()):
-            forecast["data"] = data
-            return forecast
-    except (OSError, ValueError, IndexError, KeyError, TypeError) as error:
-        # The cached file is written by a scheduled job, so a missing, half-written or
-        # stale predictions.json is routine and the database copy below is the answer.
-        # Debug rather than warning for that reason -- but it IS logged now. This handler
-        # was a bare `except Exception: pass`, which made "no forecast has been generated
-        # yet" and "the forecast file is corrupt" the same observable event, and every
-        # request paid for the fallback lookup with nothing recording why.
-        logger.debug(
-            "Falling back to the stored forecast for %s - %s: %s",
-            city["cityName"],
-            sensor["sensorId"],
-            error,
-        )
-
-    forecast_result = get_repository().get(
-        collection_name="predictions",
-        filter={"cityName": city["cityName"], "sensorId": sensor["sensorId"]},
-    )
-    if forecast_result is not None:
-        forecast["data"] = forecast_result["data"]
-        return forecast
-
-    forecast["data"] = []
-    return forecast

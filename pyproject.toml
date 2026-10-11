@@ -24,7 +24,7 @@ select = ["F401", "F811", "I"]
 # ...). Without this every internal import is reported as an undeclared dependency.
 known_first_party = [
     "api", "backup", "caching", "definitions", "modeling", "models", "preparation", "processing",
-    "repository", "settings", "utils", "visualization", "worker",
+    "repository", "services", "settings", "utils", "visualization", "worker",
 ]
 
 [tool.deptry.per_rule_ignores]
