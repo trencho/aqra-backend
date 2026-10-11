@@ -134,3 +134,45 @@ def test_health_requires_a_recent_heartbeat_from_this_host():
     assert health.worker_is_alive([worker("pod-a", 10)], "pod-a", now)
     assert not health.worker_is_alive([worker("pod-a", 600)], "pod-a", now)
     assert not health.worker_is_alive([worker("pod-b", 10)], "pod-a", now)
+
+
+def test_predict_locations_counts_a_failed_sensor_and_carries_on(monkeypatch, caplog):
+    from worker import forecast
+
+    published = []
+
+    def publish(city, sensor):
+        if sensor["sensorId"] == "bad":
+            raise RuntimeError("no model")
+        published.append(sensor["sensorId"])
+
+    monkeypatch.setattr(forecast.cache, "get", lambda key: [{"cityName": "skopje"}])
+    monkeypatch.setattr(
+        forecast,
+        "read_sensors",
+        lambda city: [{"sensorId": "bad"}, {"sensorId": "good"}],
+    )
+    monkeypatch.setattr(forecast, "publish_forecast", publish)
+
+    with caplog.at_level("INFO", logger=forecast.__name__):
+        forecast.predict_locations()
+
+    assert published == ["good"]
+    assert any("1 done, 1 failed" in record.message for record in caplog.records)
+
+
+def test_the_cli_runs_a_job_in_process_with_now(monkeypatch):
+    import worker.__main__ as cli
+
+    ran = []
+    monkeypatch.setitem(cli.JOBS, "bootstrap", (lambda: ran.append("now"), "ingest"))
+    cli.main(["bootstrap", "--now"])
+    assert ran == ["now"]
+
+
+def test_the_cli_enqueues_under_a_manual_id(redis, monkeypatch):
+    import worker.__main__ as cli
+
+    monkeypatch.setattr(cli, "connection", lambda: redis)
+    cli.main(["fetch_locations"])
+    assert Queue(queues.INGEST, connection=redis).job_ids == ["manual-fetch_locations"]
