@@ -1,5 +1,5 @@
 -r common.txt
-black==26.5.1
+black==26.10.0
 fakeredis[lua]==2.39.0
 Flask-Testing==0.8.1
 pandas-stubs==3.0.5.260914

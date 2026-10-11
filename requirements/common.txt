@@ -14,7 +14,7 @@ prometheus-flask-exporter==0.23.2
 psutil==7.2.2
 PyGithub==2.10.0
 pymongo==4.18.2
-pytz==2026.4
+pytz==2026.5
 redis==8.1.0
 requests==2.34.2
 rq==2.12.0
