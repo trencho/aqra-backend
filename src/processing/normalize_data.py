@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime, tzinfo
 from logging import getLogger
 
 from pandas import Series, concat, to_numeric
@@ -31,16 +31,6 @@ def calculate_row_index(row: Series) -> float:
         calculate_index("pm10", row["pm10"]),
         calculate_index("so2", row["so2"]),
     )
-
-
-def closest_hour(t: datetime, tz: tzinfo = None) -> datetime:
-    rounded = t.replace(minute=0, second=0, microsecond=0) + timedelta(
-        hours=(1 if t.minute >= 30 else 0)
-    )
-    if tz is not None:
-        return timezone(tz.__str__()).localize(rounded)
-
-    return rounded
 
 
 def current_hour(tz: tzinfo = None) -> datetime:
@@ -79,15 +69,6 @@ def flatten_json(nested_json: dict, exclude=None) -> dict:
 
     flatten(nested_json)
     return out
-
-
-def next_hour(t: datetime, tz: tzinfo = None) -> datetime:
-    if tz is not None:
-        return timezone(tz.__str__()).localize(
-            t.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        )
-
-    return t.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
 
 
 # TODO: Refactor this method to reduce number of exceptions based on missing dataset

@@ -1,7 +1,7 @@
 from datetime import tzinfo
 from json import loads
 from logging import getLogger
-from math import atan2, modf
+from math import atan2
 from typing import Optional
 
 from haversine import haversine_vector
@@ -181,36 +181,6 @@ def read_sensors(city_name) -> list:
             f"Error reading sensors.json file for city: {city_name}",
         )
         return []
-
-
-def recalculate_coordinate(val: tuple, _as: Optional[str] = None) -> float | tuple:
-    """
-    Accepts a coordinate as a tuple (degree, minutes, seconds) You can give only one of them (e.g., only minutes as a
-    floating point number), and it will be duly recalculated into degrees, minutes and seconds. Return value can be
-    specified as "deg", "min" or "sec"; the default return value is a proper coordinate tuple.
-    """
-    degrees, minutes, seconds = val
-
-    minutes = (minutes or 0) + int(seconds) / 60
-    seconds = seconds % 60
-    degrees = (degrees or 0) + int(minutes) / 60
-    minutes = minutes % 60
-
-    degrees_fraction, degrees_integer = modf(degrees)
-    minutes = minutes + degrees_fraction * 60
-    degrees = degrees_integer
-    minutes_fraction, minutes_integer = modf(minutes)
-    seconds = seconds + minutes_fraction * 60
-    minutes = minutes_integer
-    if _as:
-        seconds = seconds + minutes * 60 + degrees * 3600
-        if _as == "sec":
-            return seconds
-        if _as == "min":
-            return seconds / 60
-        if _as == "deg":
-            return seconds / 3600
-    return degrees, minutes, seconds
 
 
 def sort_city_coordinates(city: dict) -> dict:

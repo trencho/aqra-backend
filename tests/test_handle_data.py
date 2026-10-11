@@ -13,7 +13,6 @@ from pandas import DataFrame
 # in order — importing a ``processing`` submodule first hits a circular import.
 import api.config  # noqa: F401
 from processing.handle_data import (
-    convert_dtype,
     drop_unnecessary_features,
     find_missing_data,
     rename_features,
@@ -69,17 +68,3 @@ def test_trim_dataframe_sorts_dedupes_last_and_drops_empty_columns():
         {"time": 2, "v": 25},
         {"time": 3, "v": 30},
     ]
-
-
-def test_convert_dtype_renders_falsy_cells_as_blank():
-    # Worth pinning for whoever wires up the ``column_dtypes`` conversion this helper was
-    # written for: the falsy guard catches numeric zero too, so a real reading of 0.0
-    # becomes "" rather than "0.0". That is the current contract, not obviously the
-    # intended one, and a caller converting a pollutant column would meet it immediately.
-    assert convert_dtype(0) == ""
-    assert convert_dtype(0.0) == ""
-    assert convert_dtype(None) == ""
-    assert convert_dtype("") == ""
-
-    assert convert_dtype(12.5) == "12.5"
-    assert convert_dtype("pm2_5") == "pm2_5"

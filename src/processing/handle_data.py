@@ -1,4 +1,3 @@
-from json import dumps, loads
 from logging import getLogger
 from os import replace
 from pathlib import Path
@@ -13,20 +12,6 @@ from repository import get_repository
 logger = getLogger(__name__)
 
 
-def convert_dtype(x: object) -> str:
-    """Render a cell as a string, treating anything falsy as blank.
-
-    Currently unreferenced: it belongs to the `column_dtypes` conversion that is still
-    commented out in `api.config.environment.fetch_collection`, and is kept for it.
-
-    It had a `try/except Exception: return ""` around the `str()` call. `str()` only raises
-    if the object's own `__str__` does, which for the pandas cell values this is meant for
-    would be a defect worth seeing rather than a blank to paper over -- and the empty-string
-    fallback was indistinguishable from the falsy branch above it either way.
-    """
-    return str(x) if x else ""
-
-
 def drop_unnecessary_features(dataframe: DataFrame) -> DataFrame:
     dataframe = dataframe.drop(
         columns=dataframe.filter(regex="weather").columns, errors="ignore"
@@ -35,13 +20,6 @@ def drop_unnecessary_features(dataframe: DataFrame) -> DataFrame:
         columns=["precipProbability", "precipType", "ozone", "co2"], errors="ignore"
     )
     return dataframe
-
-
-def find_dtypes(file_path: Path, collection: str) -> Optional[dict]:
-    dtypes_path = file_path / f"{collection}_dtypes.json"
-    if dtypes_path.exists():
-        return loads(dtypes_path.read_text())
-    return None
 
 
 def find_missing_data(
@@ -143,10 +121,6 @@ def write_csv_atomically(dataframe: DataFrame, path: Path) -> None:
     staged = path.with_name(f".{path.name}.{uuid4().hex}")
     dataframe.to_csv(staged, index=False)
     replace(staged, path)
-
-
-def store_dtypes(file_path: Path, collection: str, dtypes: dict) -> None:
-    (file_path / f"{collection}_dtypes.json").write_text(dumps(dtypes, indent=4))
 
 
 def trim_dataframe(dataframe: DataFrame, column: str) -> DataFrame:

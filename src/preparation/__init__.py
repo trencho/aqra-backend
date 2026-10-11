@@ -12,6 +12,5 @@ from .location_data import (
     read_cities,
     read_countries,
     read_sensors,
-    recalculate_coordinate,
 )
 from .weather_data import api_is_available, fetch_weather_data
