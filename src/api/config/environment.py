@@ -1,6 +1,5 @@
 from gc import collect
 from logging import getLogger
-from os import environ
 
 from pandas import DataFrame
 
@@ -9,7 +8,6 @@ from definitions import (
     DATA_EXTERNAL_PATH,
     DATA_PROCESSED_PATH,
     DATA_RAW_PATH,
-    ENVIRONMENT_VARIABLES,
     LOG_PATH,
     MODELS_PATH,
     RESULTS_ERRORS_PATH,
@@ -17,14 +15,14 @@ from definitions import (
 )
 from preparation import read_cities, read_sensors
 from processing import find_missing_data, read_csv_in_chunks, save_dataframe
-from repository import RepositorySingleton
+from repository import get_repository
+from settings import missing_required_variables
 from utils import BatchOutcome, BatchTally
 
 from .schedule import fetch_locations
 
 logger = getLogger(__name__)
 
-repository = RepositorySingleton.get_instance().get_repository()
 
 SYSTEM_PATHS = [
     DATA_EXTERNAL_PATH,
@@ -38,12 +36,7 @@ SYSTEM_PATHS = [
 
 
 def init_environment_variables() -> None:
-    missing_envs = []
-    for environment_variable in ENVIRONMENT_VARIABLES:
-        if environ.get(environment_variable) is None:
-            missing_envs.append(environment_variable)
-
-    if missing_envs:
+    if missing_envs := missing_required_variables():
         logger.error(f"Missing environment variables: {', '.join(missing_envs)}")
         raise SystemExit(1)
 
@@ -51,7 +44,7 @@ def init_environment_variables() -> None:
 # TODO: Review this method for inserting duplicate values
 def fetch_collection(collection: str, city_name: str, sensor_id: str) -> BatchOutcome:
     db_records = DataFrame(
-        repository.get_many(
+        get_repository().get_many(
             collection_name=collection,
             filter={"sensorId": sensor_id},
             projection={"_id": False, "sensorId": False},

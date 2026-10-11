@@ -1,8 +1,7 @@
-from os import environ
-
 from flask import Flask
 
-from definitions import APP_ENV, ENV_DEV, ENV_PROD, SKIP_DATA_FETCH
+from repository import get_repository
+from settings import get_settings
 
 from .blueprints import init_blueprints
 from .cache import init_cache
@@ -25,8 +24,10 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
 
-    if environ.get(APP_ENV, ENV_DEV) == ENV_PROD:
+    settings = get_settings()
+    if settings.is_production:
         init_environment_variables()
+        get_repository().ensure_indexes()
         init_scheduler()
 
     init_converters(app)
@@ -39,7 +40,7 @@ def create_app() -> Flask:
     init_metrics(app)
     init_swagger(app)
 
-    if environ.get(SKIP_DATA_FETCH, "").lower() not in ("1", "true", "yes"):
+    if not settings.skip_data_fetch:
         init_data()
 
     return app

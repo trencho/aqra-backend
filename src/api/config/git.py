@@ -1,7 +1,6 @@
 from datetime import datetime
 from io import BytesIO, StringIO
 from logging import getLogger
-from os import environ
 from pathlib import Path
 from shutil import make_archive, move
 
@@ -19,8 +18,9 @@ from requests import ReadTimeout
 from requests.exceptions import ChunkedEncodingError
 from urllib3.exceptions import ReadTimeoutError
 
-from definitions import GITHUB_TOKEN, ROOT_PATH
+from definitions import ROOT_PATH
 from processing import read_csv_in_chunks, trim_dataframe
+from settings import get_settings
 
 logger = getLogger(__name__)
 
@@ -35,7 +35,7 @@ class GithubSingleton:
         return GithubSingleton._instance
 
     def __init__(self):
-        token = environ.get(GITHUB_TOKEN)
+        token = get_settings().github_token
         self.github_instance = Github(auth=Token(token)) if token else None
 
     def get_repository(self, repo_name: str) -> Repository:

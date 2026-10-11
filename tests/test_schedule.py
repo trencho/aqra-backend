@@ -20,6 +20,7 @@ from json import dumps, loads
 import api.config  # noqa: F401
 from api.config import schedule
 from api.config.schedule import fetch_locations, import_data
+from repository import get_repository
 
 
 def test_import_data_removes_empty_external_subdirectory(tmp_path, monkeypatch):
@@ -69,9 +70,7 @@ def _stub_locations(monkeypatch, tmp_path, *, countries, cities, sensors):
     monkeypatch.setattr(schedule, "fetch_sensors", lambda city_name: sensors)
     # The per-item repository writes are not what these tests are about, and a real
     # repository would need a database.
-    monkeypatch.setattr(
-        schedule.repository, "save", lambda **kwargs: None, raising=False
-    )
+    monkeypatch.setattr(get_repository(), "save", lambda **kwargs: None, raising=False)
     return raw, cache
 
 
@@ -153,7 +152,7 @@ def test_fetch_locations_summarises_what_it_managed_to_save(
     def refuse(**kwargs):
         raise RuntimeError("the database is gone")
 
-    monkeypatch.setattr(schedule.repository, "save", refuse, raising=False)
+    monkeypatch.setattr(get_repository(), "save", refuse, raising=False)
 
     with caplog.at_level("INFO", logger=schedule.__name__):
         fetch_locations()

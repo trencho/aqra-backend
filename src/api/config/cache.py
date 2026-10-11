@@ -1,16 +1,15 @@
 from atexit import register
-from os import environ
 
 from flask import Flask
 
 from caching import cache
-from definitions import REDIS_URL
+from settings import get_settings
 
 
 def _cache_config() -> dict:
     # Prefer a shared Redis cache when a URL is configured (consistent across gunicorn
     # workers and k8s pods); otherwise fall back to the per-host filesystem cache.
-    if redis_url := environ.get(REDIS_URL):
+    if redis_url := get_settings().redis_url:
         return {
             "CACHE_TYPE": "RedisCache",
             "CACHE_REDIS_URL": redis_url,

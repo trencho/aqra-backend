@@ -1,27 +1,17 @@
-from os import environ
-
 from flask import Flask, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from definitions import (
-    APP_ENV,
-    ENV_DEV,
-    ENV_PROD,
-    METRICS_PATH,
-    RATE_LIMIT_DEFAULTS,
-    RATE_LIMIT_STORAGE_URI,
-    REDIS_URL,
-    TRUSTED_PROXY_HOPS,
-    URL_PREFIX,
-)
+from definitions import METRICS_PATH, RATE_LIMIT_DEFAULTS, URL_PREFIX
+from settings import get_settings
 
 
 def _storage_uri() -> str:
     # A dedicated override wins; otherwise share the Redis backend when one is
     # configured; otherwise in-process memory (dev / single worker).
-    return environ.get(RATE_LIMIT_STORAGE_URI) or environ.get(REDIS_URL) or "memory://"
+    settings = get_settings()
+    return settings.rate_limit_storage_uri or settings.redis_url or "memory://"
 
 
 limiter = Limiter(
@@ -42,7 +32,7 @@ def _exempt_monitoring_endpoints() -> bool:
 
 
 def trusted_proxy_hops() -> int:
-    return int(environ.get(TRUSTED_PROXY_HOPS, "1"))
+    return get_settings().trusted_proxy_hops
 
 
 def trust_proxies(app: Flask, hops: int) -> None:
@@ -55,6 +45,6 @@ def trust_proxies(app: Flask, hops: int) -> None:
 
 
 def init_limiter(app: Flask) -> None:
-    if environ.get(APP_ENV, ENV_DEV) == ENV_PROD:
+    if get_settings().is_production:
         trust_proxies(app, trusted_proxy_hops())
     limiter.init_app(app)
