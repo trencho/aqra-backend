@@ -13,4 +13,19 @@ that needs it.
 
 from flask_caching import Cache
 
+from settings import get_settings
+
 cache = Cache()
+
+
+def cache_config() -> dict:
+    # Prefer a shared Redis cache when a URL is configured (consistent across gunicorn
+    # workers, the RQ worker and k8s pods); otherwise fall back to the per-host filesystem
+    # cache.
+    if redis_url := get_settings().redis_url:
+        return {
+            "CACHE_TYPE": "RedisCache",
+            "CACHE_REDIS_URL": redis_url,
+            "CACHE_KEY_PREFIX": "aqra:",
+        }
+    return {"CACHE_TYPE": "FileSystemCache", "CACHE_DIR": "/tmp/cache"}

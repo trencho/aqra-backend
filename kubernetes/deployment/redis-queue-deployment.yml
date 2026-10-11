@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: redis-queue
+  name: redis-queue
+  namespace: aqra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: redis-queue
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/aqra-network: "true"
+        io.kompose.service: redis-queue
+    spec:
+      automountServiceAccountToken: false
+      # hostPath gets no fsGroup handling, so the directory kubelet creates is root-owned and
+      # redis (uid 999) could not write its append-only file. Same fix as flask-deployment.yml.
+      initContainers:
+        - name: fix-data-ownership
+          image: redis:8.10.0-alpine
+          command: [ "chown", "-R", "999:999", "/data" ]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          volumeMounts:
+            - mountPath: /data
+              name: redis-queue-data
+      containers:
+        - name: redis-queue
+          # The RQ job queue, deliberately NOT the cache Redis. That one runs allkeys-lru with
+          # persistence off, which is right for a cache and wrong for a queue: an evicted job
+          # never runs and nothing reports it. Here writes are refused when full (noeviction)
+          # and the append-only file survives a restart.
+          # Kept on the same pinned tag as redis-deployment.yml; bump both by hand.
+          image: redis:8.10.0-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - redis-server
+            - "--appendonly"
+            - "yes"
+            - "--maxmemory"
+            - "256mb"
+            - "--maxmemory-policy"
+            - "noeviction"
+          ports:
+            - containerPort: 6379
+          # tcpSocket for the reason given in redis-deployment.yml: kubelet dials from outside.
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              memory: "512Mi"
+          volumeMounts:
+            - mountPath: /data
+              name: redis-queue-data
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+      volumes:
+        - name: redis-queue-data
+          persistentVolumeClaim:
+            claimName: redis-queue-pvc

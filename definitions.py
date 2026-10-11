@@ -8,8 +8,8 @@ from pathlib import Path
 
 # Environment variable keys
 APP_ENV = "APP_ENV"
-# When truthy, create_app() skips the upstream location fetch on startup so the app
-# can be imported without network access (the test suite sets it — see tests/conftest.py).
+# When truthy, the worker's startup bootstrap skips the pulse.eco and database refresh, so a
+# worker can start offline. The test suite sets it too (tests/conftest.py).
 SKIP_DATA_FETCH = "SKIP_DATA_FETCH"
 GITHUB_TOKEN = "GITHUB_TOKEN"
 MONGO_DATABASE = "MONGO_DATABASE"
@@ -83,7 +83,7 @@ CACHE_TIMEOUTS = {
 # Country configuration. COUNTRIES is the full catalogue of pulse.eco-supported
 # countries (the upstream data source). The active subset defaults to all of them and
 # can be narrowed with the ENABLED_COUNTRIES env var (comma-separated ISO codes, e.g.
-# "MK,RS,BG") — useful to bound the scheduler's fetch/train workload.
+# "MK,RS,BG") — useful to bound the worker's fetch/train workload.
 ENABLED_COUNTRIES = "ENABLED_COUNTRIES"
 COUNTRIES = {
     "AL": "Albania",
@@ -106,7 +106,7 @@ COUNTRIES = {
 # Pollutant types and mappings
 # Version of the on-disk model artefact set (model + selected_features + scaler + manifest).
 # Bumping this retires every previously trained artefact: the forecast loader refuses a
-# directory whose manifest carries a different schema, so the scheduler retrains it rather
+# directory whose manifest carries a different schema, so the worker retrains it rather
 # than serving numbers produced by an older pipeline.
 PIPELINE_SCHEMA = 1
 

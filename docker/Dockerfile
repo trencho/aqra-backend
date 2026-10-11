@@ -49,6 +49,10 @@ LABEL maintainer="Aleksandar Trenchevski <atrenchevski@gmail.com>"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# The app user has no home directory, so matplotlib's default config dir under ~ fails and it
+# falls back to a fresh temp dir, and a cold font cache, in every process.
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
 # Install system dependencies.
 RUN apt update && \
     apt upgrade -y && \
@@ -108,6 +112,12 @@ RUN groupadd --system --gid 1001 app && \
     mkdir -p /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi \
              /var/lib/nginx/uwsgi /var/lib/nginx/scgi && \
     chown -R app:app /var/lib/nginx
+
+# The data volume's mount point, owned by the app user. A new Docker named volume copies the
+# ownership of the directory it is mounted over, so compose's flask-data volume comes up
+# writable; without this it was root-owned and the app died on its first mkdir. Kubernetes
+# mounts a hostPath, which ignores this, hence the init container there.
+RUN mkdir -p /var/api && chown app:app /var/api
 
 EXPOSE 8080
 

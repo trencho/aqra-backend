@@ -13,7 +13,7 @@ services:
       replicas: 1
     env_file:
       - .env
-    environment:
+    environment: &app-environment
       APP_ENV: ${APP_ENV:-}
       ENABLED_COUNTRIES: ${ENABLED_COUNTRIES:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
@@ -24,6 +24,7 @@ services:
       MONGODB_HOSTNAME: ${MONGODB_HOSTNAME:-}
       OPEN_WEATHER_TOKEN: ${OPEN_WEATHER_TOKEN:-}
       PYTHONPATH: ${PYTHONPATH:-}
+      QUEUE_REDIS_URL: ${QUEUE_REDIS_URL:-redis://redis-queue:6379/0}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       REPO_NAME: ${REPO_NAME:-}
       # Compose publishes the container straight on port 80: one proxy (its own nginx).
@@ -41,6 +42,37 @@ services:
       - "80:8080"
     volumes:
       - flask-data:/var/api
+
+  # Same image, different role (docker/launch.sh). The worker trains models and runs every
+  # scheduled job; cron only enqueues them. Both share the API's data volume.
+  worker:
+    command: ["worker"]
+    container_name: worker
+    depends_on:
+      - mongo
+      - redis
+      - redis-queue
+    env_file:
+      - .env
+    environment: *app-environment
+    image: ghcr.io/trencho/aqra-backend:latest
+    networks:
+      - network
+    stop_grace_period: 10m
+    volumes:
+      - flask-data:/var/api
+
+  cron:
+    command: ["cron"]
+    container_name: cron
+    depends_on:
+      - redis-queue
+    env_file:
+      - .env
+    environment: *app-environment
+    image: ghcr.io/trencho/aqra-backend:latest
+    networks:
+      - network
 
   mongo:
     build:
@@ -80,6 +112,19 @@ services:
     volumes:
       - redis-data:/data
 
+  # The job queue. Separate from the cache Redis above: a queue must neither evict nor forget,
+  # so this one refuses writes when full (noeviction) and keeps an append-only file.
+  redis-queue:
+    image: redis:8.10.2-alpine
+    container_name: redis-queue
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    expose:
+      - 6379
+    networks:
+      - network
+    volumes:
+      - redis-queue-data:/data
+
 networks:
   network:
     attachable: true
@@ -91,4 +136,6 @@ volumes:
   mongo-data:
     driver: local
   redis-data:
+    driver: local
+  redis-queue-data:
     driver: local

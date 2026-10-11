@@ -4,7 +4,6 @@ resources:
   - config-map/flask-config.yml
   - config-map/mongo-config.yml
   - cronjob/certificate-cronjob.yml
-  - cronjob/flask-cronjob.yml
   - ingress/flask-ingress.yml
   - issuer/prod-issuer.yml
   - issuer/staging-issuer.yml
@@ -14,8 +13,11 @@ resources:
   - persistent-volume/flask-data-pvc.yml
   - persistent-volume/mongo-data-pv.yml
   - persistent-volume/mongo-data-pvc.yml
+  - persistent-volume/redis-queue-pv.yml
+  - persistent-volume/redis-queue-pvc.yml
   - sealed-secret/flask-sealed-secret.yml
   - sealed-secret/mongo-sealed-secret.yml
   - service/flask-service.yml
   - service/mongo-service.yml
+  - service/redis-queue-service.yml
   - service/redis-service.yml

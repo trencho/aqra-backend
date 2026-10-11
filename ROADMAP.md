@@ -5,38 +5,24 @@ its first step. Items are ordered by value within each section. Finished work mo
 
 ## Backend: architecture
 
-1. **Train and forecast in a worker, not in the web process.** Today APScheduler runs inside the
-   gunicorn master (`preload_app = True`), so model training competes with request handling and a
-   crash in training takes the API down with it. First step: move each scheduled job into its own
-   module under `src/worker/` and run it from an RQ worker, with a dedicated non-evicting Redis for
-   the queue and RQ's built-in cron for the schedule.
-2. **Versioned model artefacts.** One mutable folder per pollutant holds the model, the scaler and
+1. **Versioned model artefacts.** One mutable folder per pollutant holds the model, the scaler and
    the manifest; the manifest is written before the model, and a stale `.mdl` from a previous winner
    can be loaded instead of the current one. First step: write each training run to its own
    directory and publish it by swapping a `current` pointer atomically after verification.
-3. **A forecast service.** The forecast blueprint reads files and falls back to the database inline,
+2. **A forecast service.** The forecast blueprint reads files and falls back to the database inline,
    the recursive forecast mixes naive local time with UTC, and its cache never hits because it is
    keyed on a model object. First step: extract `ForecastService` with an injected clock and key the
    model cache on the registry version.
-4. **MongoDB as the single source of truth.** Readings are stored three times (Mongo, raw CSV,
+3. **MongoDB as the single source of truth.** Readings are stored three times (Mongo, raw CSV,
    processed CSV) and rebuilt from Mongo on every boot. First step: give `weather` and `pollution` a
    unique `(sensorId, time)` index with upsert writes, then rebuild the CSVs from Mongo as a cache.
-5. **Typed settings.** Configuration is a flat module of env-var names checked by a presence loop.
-   First step: a frozen `Settings.from_env()` read at use time.
-6. **Retire dead code.** `feature_imputation.py`, `train_city_sensors`, four regression models that
+4. **Retire dead code.** `feature_imputation.py`, `train_city_sensors`, four regression models that
    are never enabled, and helpers with no callers. First step: delete them with their tests, keeping
    the test that pins `get_dummies` without `drop_first`.
 
 ## Backend: security and privacy
 
-1. **Key the rate limiter on the client, not the ingress.** Requests pass two proxies
-   (ingress-nginx, then the pod's nginx), and `ProxyFix(x_for=1)` trusts only the last, so every
-   client shares one bucket. First step: a `TRUSTED_PROXY_HOPS` setting, 2 in Kubernetes and 1 in
-   compose.
-2. **Security headers.** Only `server_tokens off` is set. First step: `X-Content-Type-Options`,
-   `Referrer-Policy` and `X-Frame-Options` in the pod's nginx, a CSP that still lets `/apidocs` run,
-   and HSTS at the ingress.
-3. **Access-log minimisation.** The pod's nginx logs client IP and user agent for every request.
+1. **Access-log minimisation.** The pod's nginx logs client IP and user agent for every request.
    First step: decide whether the user agent is needed, and drop it from `log_format` if not.
 
 ## Frontend (aqra-frontend)

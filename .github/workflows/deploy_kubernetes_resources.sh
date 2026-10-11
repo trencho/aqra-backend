@@ -150,7 +150,7 @@ dump_dependency_state() {
   kubectl get events -n aqra --sort-by=.lastTimestamp 2>&1 | tail -25 | sed 's/^/  /' \
     || echo "  (could not read events)"
 
-  for dependency in mongo redis; do
+  for dependency in mongo redis redis-queue; do
     # An explicit `if`, not `[ ... ] && continue`: under `set -e` a false test makes the
     # AND-list return non-zero as the last command in the loop body, which exits the whole
     # deploy. The diagnostics must never be able to kill the run they are explaining.
@@ -169,7 +169,9 @@ kubectl apply -k ${KUBERNETES_DIR}
 # MongoDB first to avoid dependency issues.
 deploy_and_wait mongo 10m
 deploy_and_wait redis 10m
-# Longer: flask's create_app() blocks on a bulk data fetch before the worker binds, and
-# its startupProbe allows 15 minutes for that. "restart" because its image is the mutable
-# :latest tag -- see the note in deploy_and_wait.
-deploy_and_wait flask 20m restart
+deploy_and_wait redis-queue 10m
+# "restart" because both run the mutable :latest tag -- see the note in deploy_and_wait.
+deploy_and_wait flask 10m restart
+# Longer: the worker runs bootstrap (the location refresh and the CSV rebuild from Mongo)
+# before it reports anything, which on a cold volume is minutes.
+deploy_and_wait worker 20m restart

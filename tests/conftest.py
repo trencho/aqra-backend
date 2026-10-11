@@ -4,10 +4,9 @@ Two things aren't committed (``data/`` is gitignored) yet the endpoint tests in
 ``test_api.py`` need them:
 
 * **Raw location JSON** (``cities``/``countries``/``sensors``). In prod/CI these come
-  from the scheduler's live ``fetch_locations`` call; importing the app used to trigger
-  that network fetch on every ``create_app()``. We now set ``SKIP_DATA_FETCH`` (read in
-  ``create_app``) so the import stays offline, and seed a trimmed skopje/MK/1000 slice
-  from the committed fixtures under ``tests/fixtures/raw`` instead.
+  from the worker's live ``fetch_locations`` job. Importing the app fetches nothing, and
+  ``SKIP_DATA_FETCH`` keeps the worker's ``bootstrap`` offline too, so the suite seeds a
+  trimmed skopje/MK/1000 slice from the committed fixtures under ``tests/fixtures/raw``.
 * **Processed CSVs** for skopje/1000, which the history/pollutants endpoints read. All
   four data-dependent tests resolve to skopje/1000 (the coordinate tests use that
   sensor's exact position), so seeding one sensor is enough.
@@ -26,8 +25,8 @@ import pytest
 
 from definitions import DATA_PROCESSED_PATH, DATA_RAW_PATH, SKIP_DATA_FETCH
 
-# Keep ``create_app()`` (run at import time by ``from src.api.app import app``) offline.
-# ``setdefault`` so an explicit override from the environment still wins.
+# Keep the worker's bootstrap offline if a test ever runs it unstubbed. ``setdefault`` so
+# an explicit override from the environment still wins.
 environ.setdefault(SKIP_DATA_FETCH, "1")
 
 # The endpoint tests aren't exercising rate limits; disable the shared limiter so
