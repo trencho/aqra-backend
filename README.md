@@ -11,12 +11,17 @@ Greece, Romania, Switzerland, and more); narrow the coverage with the `ENABLED_C
 - **Locations**: list countries and cities, and the sensors within a city (by id or nearest to a
   coordinate).
 - **History**: time-series weather or pollution readings for a city/sensor or a coordinate.
-- **Pollutants**: the latest per-pollutant values (`AQI, CO, NH3, NO, NO2, O3, PM2.5, PM10, SO2`)
-  for a city/sensor or coordinate.
+- **Pollutants**: which pollutants a city/sensor or coordinate reports, out of
+  `AQI, CO, NH3, NO, NO2, O3, PM2.5, PM10, SO2` (names and keys, not readings; readings come from
+  History).
 - **Forecasts**: model-driven pollutant predictions for a city, a specific sensor, or a coordinate.
+- **Evaluation**: the model serving each pollutant's forecast and its held-out MAE, MAPE, MSE and
+  RMSE.
 - **Plots**: rendered prediction and error plots per city/sensor/pollutant.
-- **Ops**: OpenAPI/Swagger UI, liveness/readiness health checks, CORS, in-process caching, and (in
-  prod) an APScheduler pipeline that fetches data, trains models, and publishes forecasts on a cron.
+- **Ops**: OpenAPI/Swagger UI, liveness/readiness health checks, CORS, caching (Redis or
+  filesystem), rate limiting, Prometheus metrics at `/metrics` (not routed by the
+  ingress), and (in prod) an APScheduler pipeline that fetches data, trains models, and publishes
+  forecasts on a cron.
 
 ## Tech stack
 
@@ -28,7 +33,8 @@ Greece, Romania, Switzerland, and more); narrow the coverage with the `ENABLED_C
   APScheduler job store. Note the two production paths run **different MongoDB majors**: the
   compose stack builds `aqra-mongo` from `mongo:8.3.4`, while the Kubernetes deployment pins
   `mongo:4.4` because the node lacks AVX, which MongoDB 5+ requires.
-- **Black** (formatting) · **pytest** + **Flask-Testing** (tests).
+- **Black** (formatting) · **Ruff** (import hygiene and order) · **pytest** + **Flask-Testing**
+  (tests).
 
 ## API
 
@@ -64,7 +70,7 @@ src/
 ├── models/                # model implementations (base + LightGBM / RandomForest / XGBoost enabled)
 ├── visualization/         # prediction & error plots
 └── utils.py
-data/  models/  results/   # runtime artifacts (raw location JSON is committed; processed CSVs/models are generated)
+data/  models/  results/   # runtime artifacts, all generated and gitignored
 docker/  kubernetes/       # deployment
 tests/                     # pytest (Flask-Testing) endpoint tests
 ```
@@ -72,8 +78,9 @@ tests/                     # pytest (Flask-Testing) endpoint tests
 ## Architecture
 
 - **App factory**: `src/api/config/__init__.py:create_app()` composes small `init_*` functions
-  (logger, GC, system paths, converters, blueprints, cache, CORS, health, swagger, data).
-- **Repository**: `config/repository.py` exposes a `Repository` interface with two implementations
+  (logger, GC, system paths, converters, blueprints, cache, CORS, health, limiter, metrics,
+  swagger, data).
+- **Repository**: `src/repository.py` exposes a `Repository` interface with two implementations
   selected by `APP_ENV`: `RegularRepository` (MongoDB) in prod, `InMemoryRepository` in dev/tests.
 - **Scheduler** (prod only): APScheduler cron jobs fetch hourly data, dump/back up data to a Git
   repo, train models, and publish forecasts; the job store is SQLite via SQLAlchemy.
@@ -93,6 +100,8 @@ the required variables at startup and exits if any are missing.
 | `OPEN_WEATHER_TOKEN`                                                 | upstream weather/air-quality API token              |
 | `GITHUB_TOKEN` / `REPO_NAME`                                         | data-dump backup to a Git repository (scheduler)    |
 | `REDIS_URL`                                                          | optional shared Redis for the cache + rate limiter (multi-worker/pod); falls back to a filesystem cache + in-memory limits when unset |
+| `RATE_LIMIT_STORAGE_URI`                                             | optional limiter backend override; wins over `REDIS_URL` |
+| `SKIP_DATA_FETCH`                                                    | `1`/`true`/`yes` skips the startup fetch from pulse.eco, so the app boots offline (the tests set it) |
 | `VOLUME_PATH`                                                        | root for `data/`, `logs/`, `models/`, `results/` (defaults to the project dir) |
 
 ## Running
@@ -129,14 +138,16 @@ pytest            # tests/ run in parallel (-n logical); see pytest.ini
 The tests are endpoint integration tests (Flask-Testing) plus unit tests over the processing/modeling
 layers, run against the in-memory repository. The suite is **hermetic**: `tests/conftest.py` sets
 `SKIP_DATA_FETCH=1` (so `create_app()` does not fetch upstream data), disables the rate limiter, and
-seeds a trimmed skopje/MK fixture from `tests/fixtures/raw` into a gitignored `data/` dir (cleaned up
-on teardown). No network or MongoDB required.
+seeds a trimmed skopje/MK fixture from `tests/fixtures/raw` into the gitignored `data/` dir. Seeding
+only creates files that are missing, so your own `data/` is never overwritten; the processed seeds
+are removed on teardown and the raw ones stay. No network or MongoDB required.
 
 ## Formatting
 
 ```bash
 black src tests definitions.py           # format
-black --check src tests definitions.py   # verify (this is what CI runs)
+black --check src tests definitions.py   # verify (CI runs this)
+ruff check src tests definitions.py      # unused imports and import order (CI runs this too)
 ```
 
 A pre-commit hook runs Ruff's import fixes and Black on the Python files you stage. Enable it once
@@ -171,3 +182,18 @@ Before touching that pipeline:
 MongoDB is pinned to **`mongo:4.4`**, deliberately not to a patch version and deliberately not
 newer: this node's CPU has no AVX, which MongoDB 5.0+ requires, and the floating `4.4` tag is
 what is already running: pinning tighter would roll the database on the next apply.
+
+pymongo 4.18 supports MongoDB 4.4 as its **minimum** server version. A pymongo release that raises
+that floor cuts the Kubernetes deployment off its database, so review pymongo bumps against the
+running Mongo version before merging them.
+
+## Roadmap
+
+[`ROADMAP.md`](ROADMAP.md) holds the full list with a first step for each item. In order:
+
+1. Move training and forecasting out of the web process into an RQ worker with its own Deployment.
+2. Version model artefacts per training run behind an atomic `current` pointer.
+3. Extract a forecast service with UTC time, an in-process model cache and one data read per sensor.
+4. Make MongoDB the single source of truth, with the processed CSVs as a rebuildable cache.
+5. Key the rate limiter on the real client IP behind two proxies, and add security headers.
+6. Publish privacy, terms, cookie, data-source and disclaimer pages (pending FEIT review).
