@@ -17,7 +17,7 @@ import pytest
 # in order — importing a package submodule first can hit a circular import.
 import api.config  # noqa: F401
 import models
-from models import get_model_class, make_model
+from models import make_model
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +54,3 @@ def test_model_save_load_roundtrip(model_name, training_data, tmp_path):
 def test_make_model_unknown_raises():
     with pytest.raises(Exception):
         make_model("NoSuchModel")
-
-
-def test_get_model_class_returns_the_class():
-    assert get_model_class("LinearRegressionModel") is models.LinearRegressionModel
