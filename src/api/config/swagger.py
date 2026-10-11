@@ -23,7 +23,25 @@ CONFIG = {
     "title": "AQRA",
 }
 
-swagger = Swagger(config=CONFIG, merge=True)
+TEMPLATE = {
+    "info": {
+        "title": "AQRA",
+        "description": "Air-quality readings, history and forecasts for the pulse.eco sensor "
+        "network. Weather data © OpenWeather. Forecasts are statistical estimates and must "
+        "not be used for health or safety decisions.",
+        "termsOfService": "https://aqra.feit.ukim.edu.mk/terms",
+        "contact": {
+            "name": "Faculty of Electrical Engineering and Information Technologies, UKIM",
+            "url": "https://aqra.feit.ukim.edu.mk/privacy",
+        },
+        "license": {
+            "name": "Apache-2.0",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        },
+    },
+}
+
+swagger = Swagger(config=CONFIG, template=TEMPLATE, merge=True)
 
 
 def init_swagger(app: Flask) -> None:

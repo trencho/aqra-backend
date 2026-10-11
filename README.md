@@ -1,4 +1,4 @@
-# Air Quality REST API (AQRA)
+# aqra-backend (AQRA)
 
 A Flask REST API that collects air-quality and weather data per city/sensor, trains machine-learning
 regression models on it, and serves **current readings, history, pollutant metrics, and multi-model
@@ -46,8 +46,8 @@ All routes are prefixed with **`/api/v1`**. Swagger UI: **`/api/v1/apidocs/`**.
 | Plots      | `GET /plots/predictions/cities/<city_name>/sensors/<sensor_id>/pollutants/<pollutant>/` · `GET /plots/errors/cities/<city_name>/sensors/<sensor_id>/pollutants/<pollutant>/errors/<error_type>/` |
 | Health     | `GET /healthz/live`, `GET /healthz/ready`                                              |
 
-`data_type` is `weather` or `pollution`. The `fetch` and `train` blueprints exist in the source but
-are intentionally **not registered** (data fetching and model training run via the scheduler, not HTTP).
+`data_type` is `weather` or `pollution`. Data fetching and model training run only on the
+scheduler; no HTTP route triggers them.
 
 ## Project structure
 
@@ -153,7 +153,7 @@ Production runs as a **Docker Compose** stack (Flask image + MongoDB) or on **Ku
 `docker/README.md` and `kubernetes/README.md`.
 
 On `master`, `.github/workflows/build-deploy.yml` runs the tests, **builds the image on the
-runner and pushes it to `ghcr.io/trencho/air-quality-rest-api`**, then connects to the host over
+runner and pushes it to `ghcr.io/trencho/aqra-backend`**, then connects to the host over
 OpenVPN + SSH and applies the manifests. The node pulls the image; **nothing is built there**.
 It used to be: `docker compose build` on the node wrote to Docker's image store while kubelet
 read containerd's, so the Deployment sat in `ErrImageNeverPull` and `/api/v1/*` returned 503.

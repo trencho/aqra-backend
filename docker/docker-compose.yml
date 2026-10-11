@@ -31,7 +31,7 @@ services:
     # Same name CI publishes and the cluster pulls, so a local `compose build`
     # and the deployed image cannot drift apart in naming. Compose still builds
     # it locally; the cluster pulls the CI-built one.
-    image: ghcr.io/trencho/air-quality-rest-api:latest
+    image: ghcr.io/trencho/aqra-backend:latest
     networks:
       - network
     ports:
