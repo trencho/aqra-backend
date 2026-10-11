@@ -132,6 +132,10 @@ URL_PREFIX = "/api/v1"
 # with the RATE_LIMIT_STORAGE_URI env var (e.g. "redis://host:6379").
 RATE_LIMIT_STORAGE_URI = "RATE_LIMIT_STORAGE_URI"
 RATE_LIMIT_DEFAULTS = ["1000 per hour", "60 per minute"]
+# How many reverse proxies in front of gunicorn append to X-Forwarded-For. Kubernetes has two
+# (ingress-nginx, then the pod's own nginx), compose has one. ProxyFix trusts exactly this many
+# hops, so too low keys every client on a proxy's IP and too high lets a client spoof its own.
+TRUSTED_PROXY_HOPS = "TRUSTED_PROXY_HOPS"
 
 # Prometheus metrics (prometheus-flask-exporter). Metrics are per-process; multi-worker
 # prod aggregation needs PROMETHEUS_MULTIPROC_DIR set plus a gunicorn worker hook.

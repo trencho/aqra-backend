@@ -13,6 +13,7 @@ from definitions import (
     RATE_LIMIT_DEFAULTS,
     RATE_LIMIT_STORAGE_URI,
     REDIS_URL,
+    TRUSTED_PROXY_HOPS,
     URL_PREFIX,
 )
 
@@ -40,10 +41,20 @@ def _exempt_monitoring_endpoints() -> bool:
     )
 
 
+def trusted_proxy_hops() -> int:
+    return int(environ.get(TRUSTED_PROXY_HOPS, "1"))
+
+
+def trust_proxies(app: Flask, hops: int) -> None:
+    # Behind nginx over a unix socket, request.remote_addr is the socket peer, not the client.
+    # ProxyFix takes the client from X-Forwarded-For, counting `hops` entries from the right.
+    # In Kubernetes the header arrives as "client, ingress-ip" because the pod's nginx appends
+    # the ingress controller it heard from, so trusting one hop keyed every visitor on the
+    # ingress controller's IP and they all shared one rate-limit bucket.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=hops)
+
+
 def init_limiter(app: Flask) -> None:
     if environ.get(APP_ENV, ENV_DEV) == ENV_PROD:
-        # In prod the app sits behind nginx over a unix socket, so request.remote_addr
-        # is the socket peer, not the client. Trust one proxy's X-Forwarded-For header
-        # (set by nginx) so the limiter keys on the real client IP.
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+        trust_proxies(app, trusted_proxy_hops())
     limiter.init_app(app)

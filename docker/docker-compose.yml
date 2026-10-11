@@ -26,6 +26,8 @@ services:
       PYTHONPATH: ${PYTHONPATH:-}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       REPO_NAME: ${REPO_NAME:-}
+      # Compose publishes the container straight on port 80: one proxy (its own nginx).
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
       TZ: ${TZ:-}
       VOLUME_PATH: ${VOLUME_PATH:-}
     # Same name CI publishes and the cluster pulls, so a local `compose build`

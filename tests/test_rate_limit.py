@@ -12,8 +12,19 @@ from flask import Flask
 # Import the config package first so the api chain initialises in order.
 import api.config  # noqa: F401
 from api.blueprints.errors import errors_blueprint
-from api.config.limiter import _storage_uri, init_limiter, limiter
-from definitions import RATE_LIMIT_STORAGE_URI, REDIS_URL, URL_PREFIX
+from api.config.limiter import (
+    _storage_uri,
+    init_limiter,
+    limiter,
+    trust_proxies,
+    trusted_proxy_hops,
+)
+from definitions import (
+    RATE_LIMIT_STORAGE_URI,
+    REDIS_URL,
+    TRUSTED_PROXY_HOPS,
+    URL_PREFIX,
+)
 
 
 @pytest.fixture
@@ -95,3 +106,45 @@ def test_storage_uri_prefers_override_then_redis_then_memory(monkeypatch):
 
     monkeypatch.setenv(RATE_LIMIT_STORAGE_URI, "redis://dedicated:6379")
     assert _storage_uri() == "redis://dedicated:6379"
+
+
+def _client_key(hops: int, forwarded_for: str) -> str:
+    """What the limiter keys on for a request that arrives through ``hops`` proxies."""
+    app = Flask(__name__)
+
+    @app.route("/whoami")
+    def _whoami():
+        return limiter._key_func()
+
+    trust_proxies(app, hops)
+    return (
+        app.test_client()
+        .get(
+            "/whoami",
+            headers={"X-Forwarded-For": forwarded_for},
+            environ_base={"REMOTE_ADDR": "unix-socket-peer"},
+        )
+        .get_data(as_text=True)
+    )
+
+
+def test_two_proxies_key_on_the_client_not_the_ingress():
+    # Kubernetes: ingress-nginx sets "client", the pod's nginx appends the ingress IP.
+    assert _client_key(2, "203.0.113.9, 10.0.0.1") == "203.0.113.9"
+
+
+def test_one_trusted_hop_behind_two_proxies_keys_on_the_ingress():
+    # The bug this replaced: every visitor shared the ingress controller's bucket.
+    assert _client_key(1, "203.0.113.9, 10.0.0.1") == "10.0.0.1"
+
+
+def test_a_spoofed_leading_entry_is_not_trusted():
+    # A client can prepend anything; only the entries the proxies appended count.
+    assert _client_key(2, "6.6.6.6, 203.0.113.9, 10.0.0.1") == "203.0.113.9"
+
+
+def test_trusted_proxy_hops_defaults_to_one(monkeypatch):
+    monkeypatch.delenv(TRUSTED_PROXY_HOPS, raising=False)
+    assert trusted_proxy_hops() == 1
+    monkeypatch.setenv(TRUSTED_PROXY_HOPS, "2")
+    assert trusted_proxy_hops() == 2

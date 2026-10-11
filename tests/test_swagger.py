@@ -28,3 +28,13 @@ class TestOpenApiInfo(TestCase):
         self.assertTrue(info["contact"]["url"].endswith("/privacy"))
         self.assertEqual("Apache-2.0", info["license"]["name"])
         self.assertIn("OpenWeather", info["description"])
+
+    def test_swagger_ui_loads_no_third_party_fonts(self):
+        # flasgger's stock head.html pulls a Google Fonts stylesheet, which hands every
+        # visitor's IP address to Google. src/api/config/templates/flasgger/head.html
+        # overrides it; this fails if the override stops being picked up.
+        response = self.client.get(f"{URL_PREFIX}/apidocs/")
+        self.assert200(response)
+        page = response.get_data(as_text=True)
+        self.assertNotIn("fonts.googleapis.com", page)
+        self.assertIn("swagger-ui", page)
