@@ -1,6 +1,5 @@
 from gc import collect
 from logging import getLogger
-from os import environ
 from time import sleep
 
 from pandas import DataFrame, json_normalize
@@ -10,9 +9,9 @@ from definitions import (
     DATA_PATH,
     DATA_RAW_PATH,
     OPEN_WEATHER,
-    OPEN_WEATHER_TOKEN,
 )
 from processing import flatten_json, save_dataframe
+from settings import get_settings
 
 logger = getLogger(__name__)
 
@@ -36,7 +35,7 @@ def fetch_open_weather_data(city_name: str, sensor: dict) -> bool:
     lat, lon = float(sensor_position[0]), float(sensor_position[1])
     units = "metric"
     exclude = "alerts,current,daily,minutely"
-    token = environ[OPEN_WEATHER_TOKEN]
+    token = get_settings().open_weather_token
     params = f"lat={lat}&lon={lon}&units={units}&exclude={exclude}&appid={token}"
 
     try:
@@ -72,7 +71,7 @@ def fetch_pollution_data(city_name: str, sensor: dict) -> bool:
     url = "https://api.openweathermap.org/data/2.5/air_pollution/forecast"
     sensor_position = sensor["position"].split(",")
     lat, lon = float(sensor_position[0]), float(sensor_position[1])
-    token = environ[OPEN_WEATHER_TOKEN]
+    token = get_settings().open_weather_token
     params = f"lat={lat}&lon={lon}&appid={token}"
 
     try:

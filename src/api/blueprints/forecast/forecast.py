@@ -15,12 +15,11 @@ from preparation import (
     read_sensors,
 )
 from processing import current_hour, next_hour
-from repository import RepositorySingleton
+from repository import get_repository
 
 logger = getLogger(__name__)
 
 forecast_blueprint = Blueprint("forecast", __name__)
-repository = RepositorySingleton.get_instance().get_repository()
 
 
 @forecast_blueprint.get(
@@ -181,7 +180,7 @@ def return_sensor_forecast_results(city: dict, sensor: dict) -> dict:
             error,
         )
 
-    forecast_result = repository.get(
+    forecast_result = get_repository().get(
         collection_name="predictions",
         filter={"cityName": city["cityName"], "sensorId": sensor["sensorId"]},
     )

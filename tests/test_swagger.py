@@ -38,3 +38,10 @@ class TestOpenApiInfo(TestCase):
         page = response.get_data(as_text=True)
         self.assertNotIn("fonts.googleapis.com", page)
         self.assertIn("swagger-ui", page)
+
+    def test_swagger_ui_script_has_no_python_none(self):
+        # flasgger renders config["auth"] verbatim into JavaScript; unset, it wrote
+        # `let auth_config = None;` and the page threw a ReferenceError on load.
+        page = self.client.get(f"{URL_PREFIX}/apidocs/").get_data(as_text=True)
+        self.assertNotIn("auth_config = None", page)
+        self.assertIn("auth_config = {}", page)

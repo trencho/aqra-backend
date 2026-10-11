@@ -6,10 +6,9 @@ from typing import Optional
 from pandas import DataFrame, concat, read_csv, to_datetime
 
 from definitions import CHUNK_SIZE, COLLECTIONS
-from repository import RepositorySingleton
+from repository import get_repository
 
 logger = getLogger(__name__)
-repository = RepositorySingleton.get_instance().get_repository()
 
 
 def convert_dtype(x: object) -> str:
@@ -111,7 +110,7 @@ def save_dataframe(
     dataframe = drop_unnecessary_features(dataframe)
 
     db_records = DataFrame(
-        repository.get_many(
+        get_repository().get_many(
             collection_name=collection,
             filter={"sensorId": sensor_id},
             projection={"_id": False},
@@ -125,7 +124,9 @@ def save_dataframe(
         return
 
     dataframe.loc[:, "sensorId"] = sensor_id
-    repository.save_many(collection_name=collection, items=dataframe.to_dict("records"))
+    get_repository().save_many(
+        collection_name=collection, items=dataframe.to_dict("records")
+    )
 
     try:
         df = read_csv_in_chunks(collection_path)

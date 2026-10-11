@@ -26,6 +26,7 @@ import api.config  # noqa: F401
 from api import blueprints
 from api.blueprints import fetch_dataframe
 from api.config.cache import cache
+from repository import get_repository
 
 _CSV = "time,pm2_5\n1704067200,12.0\n1704070800,13.0\n"
 
@@ -114,8 +115,8 @@ _FORECAST_CITY = {"cityName": "skopje", "countryCode": "MK"}
 _FORECAST_SENSOR = {"sensorId": "1000", "position": "41.99,21.43"}
 
 
-def _stub_repository(monkeypatch, view, result):
-    monkeypatch.setattr(view.repository, "get", lambda **kwargs: result, raising=False)
+def _stub_repository(monkeypatch, result):
+    monkeypatch.setattr(get_repository(), "get", lambda **kwargs: result, raising=False)
 
 
 def test_serves_the_cached_forecast_when_it_is_for_the_upcoming_hour(
@@ -130,7 +131,7 @@ def test_serves_the_cached_forecast_when_it_is_for_the_upcoming_hour(
         dumps([{"time": upcoming, "pm2_5": 12.0}])
     )
     # The stored copy must not be consulted at all when the file is current.
-    _stub_repository(monkeypatch, view, {"data": ["from the database"]})
+    _stub_repository(monkeypatch, {"data": ["from the database"]})
 
     forecast = view.return_sensor_forecast_results(_FORECAST_CITY, _FORECAST_SENSOR)
 
@@ -150,7 +151,7 @@ def test_falls_back_to_the_stored_forecast_when_the_cached_file_is_stale(
     (sensor_dir / "predictions.json").write_text(
         dumps([{"time": stale, "pm2_5": 12.0}])
     )
-    _stub_repository(monkeypatch, view, {"data": ["from the database"]})
+    _stub_repository(monkeypatch, {"data": ["from the database"]})
 
     forecast = view.return_sensor_forecast_results(_FORECAST_CITY, _FORECAST_SENSOR)
 
@@ -161,7 +162,7 @@ def test_falls_back_to_the_stored_forecast_when_the_cached_file_is_missing(
     app_context, forecast_view, monkeypatch, caplog
 ):
     view, _ = forecast_view
-    _stub_repository(monkeypatch, view, {"data": ["from the database"]})
+    _stub_repository(monkeypatch, {"data": ["from the database"]})
 
     with caplog.at_level("DEBUG", logger=view.__name__):
         forecast = view.return_sensor_forecast_results(_FORECAST_CITY, _FORECAST_SENSOR)
@@ -177,7 +178,7 @@ def test_falls_back_to_the_stored_forecast_when_the_cached_file_is_corrupt(
 ):
     view, sensor_dir = forecast_view
     (sensor_dir / "predictions.json").write_text("{not json")
-    _stub_repository(monkeypatch, view, {"data": ["from the database"]})
+    _stub_repository(monkeypatch, {"data": ["from the database"]})
 
     with caplog.at_level("DEBUG", logger=view.__name__):
         forecast = view.return_sensor_forecast_results(_FORECAST_CITY, _FORECAST_SENSOR)
@@ -190,7 +191,7 @@ def test_returns_an_empty_forecast_when_neither_source_has_one(
     app_context, forecast_view, monkeypatch
 ):
     view, _ = forecast_view
-    _stub_repository(monkeypatch, view, None)
+    _stub_repository(monkeypatch, None)
 
     forecast = view.return_sensor_forecast_results(_FORECAST_CITY, _FORECAST_SENSOR)
 

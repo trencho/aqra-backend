@@ -3,7 +3,7 @@ from base64 import b64encode
 from datetime import datetime
 from json import dumps, loads
 from logging import getLogger
-from os import environ, walk
+from os import walk
 from pathlib import Path
 from shutil import unpack_archive
 
@@ -20,7 +20,6 @@ from definitions import (
     MODELS_PATH,
     OPEN_WEATHER,
     POLLUTANTS,
-    REPO_NAME,
 )
 from modeling import train_regression_model
 from preparation import (
@@ -39,7 +38,8 @@ from processing import (
     read_csv_in_chunks,
     save_dataframe,
 )
-from repository import RepositorySingleton
+from repository import get_repository
+from settings import get_settings
 from utils import BatchTally, track_time
 
 from .cache import cache
@@ -51,8 +51,6 @@ logger = getLogger(__name__)
 scheduler = BackgroundScheduler()
 jobstore_name = "aqra"
 DATABASE_FILE = DATA_PATH / "jobs.sqlite"
-
-repository = RepositorySingleton.get_instance().get_repository()
 
 
 @scheduler.scheduled_job(
@@ -83,7 +81,7 @@ def dump_data() -> None:
         update_git_files(
             file_list,
             file_names,
-            environ[REPO_NAME],
+            get_settings().repo_name,
             "master",
             f"Scheduled data dump - {datetime.now().strftime('%H:%M:%S %d-%m-%Y')}",
         )
@@ -164,7 +162,7 @@ def fetch_locations() -> None:
     with BatchTally(logger, "fetch_locations (countries)", "country") as tally:
         for country in tally.track(countries):
             try:
-                repository.save(
+                get_repository().save(
                     collection_name="countries",
                     filter={"countryCode": country["countryCode"]},
                     item=country,
@@ -194,7 +192,7 @@ def fetch_locations() -> None:
     ):
         for city in city_tally.track(cities):
             try:
-                repository.save(
+                get_repository().save(
                     collection_name="cities",
                     filter={"cityName": city["cityName"]},
                     item=city,
@@ -207,7 +205,7 @@ def fetch_locations() -> None:
             for sensor in sensor_tally.track(sensors):
                 sensor["cityName"] = city["cityName"]
                 try:
-                    repository.save(
+                    get_repository().save(
                         collection_name="sensors",
                         filter={"sensorId": sensor["sensorId"]},
                         item=sensor,
@@ -303,7 +301,7 @@ def predict_locations() -> None:
                     / "predictions.json"
                 )
                 try:
-                    repository.save(
+                    get_repository().save(
                         collection_name="predictions",
                         filter={
                             "cityName": city["cityName"],

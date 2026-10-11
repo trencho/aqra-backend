@@ -1,22 +1,12 @@
 from abc import ABC, abstractmethod
 from logging import getLogger
-from os import environ
 from uuid import uuid4
 
 from bson.objectid import ObjectId
 from pymongo import ASCENDING, MongoClient
 
-from definitions import (
-    APP_ENV,
-    COLLECTIONS,
-    ENV_DEV,
-    ENV_PROD,
-    MONGO_DATABASE,
-    MONGO_PASSWORD,
-    MONGO_USERNAME,
-    MONGODB_CONNECTION,
-    MONGODB_HOSTNAME,
-)
+from definitions import COLLECTIONS
+from settings import get_settings
 
 logger = getLogger(__name__)
 
@@ -42,14 +32,18 @@ class Repository(ABC):
     def delete(self, collection_name, item) -> None:
         pass
 
+    def ensure_indexes(self) -> None:
+        """Create the indexes queries rely on. Nothing to do for a store without indexes."""
+
 
 class RegularRepository(Repository):
     def __init__(self, uri):
         self.mongo_client = MongoClient(host=uri, connect=False)
         self.database = self.mongo_client.get_default_database()
-        self._create_indexes()
 
-    def _create_indexes(self):
+    def ensure_indexes(self) -> None:
+        # Explicit, not in __init__. Creating indexes in the constructor meant importing any module
+        # that resolved the repository at import time sent commands to Mongo before the app existed.
         self.database["cities"].create_index([("cityName", ASCENDING)])
         self.database["countries"].create_index([("countryCode", ASCENDING)])
         self.database["sensors"].create_index([("sensorId", ASCENDING)])
@@ -206,15 +200,17 @@ class RepositorySingleton:
 
     def __init__(self):
         if not RepositorySingleton._repository:
-            if environ.get(APP_ENV, ENV_DEV) == ENV_PROD:
-                RepositorySingleton._repository = RegularRepository(
-                    f"{environ[MONGODB_CONNECTION]}://{environ[MONGO_USERNAME]}:{environ[MONGO_PASSWORD]}@"
-                    f"{environ[MONGODB_HOSTNAME]}/{environ[MONGO_DATABASE]}"
-                    f"?authSource=admin&retryWrites=true&w=majority"
-                )
+            settings = get_settings()
+            if settings.is_production:
+                RepositorySingleton._repository = RegularRepository(settings.mongo_uri)
             else:
                 RepositorySingleton._repository = InMemoryRepository()
 
     @staticmethod
     def get_repository() -> Repository:
         return RepositorySingleton._repository
+
+
+def get_repository() -> Repository:
+    """The process-wide repository, created on first use rather than at import."""
+    return RepositorySingleton.get_instance().get_repository()

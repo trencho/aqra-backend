@@ -21,6 +21,9 @@ CONFIG = {
     "static_url_path": f"{URL_PREFIX}/flasgger_static",
     "specs_route": f"{URL_PREFIX}/apidocs/",
     "title": "AQRA",
+    # flasgger renders this straight into the page script as `let auth_config = ...;`. Left
+    # unset it prints Python's `None`, which throws a ReferenceError in every browser.
+    "auth": {},
 }
 
 TEMPLATE = {

@@ -23,7 +23,13 @@ OPEN_WEATHER_TOKEN = "OPEN_WEATHER_TOKEN"
 # When unset, the cache falls back to a per-host filesystem cache and the limiter to
 # in-process memory.
 REDIS_URL = "REDIS_URL"
+# Redis for the RQ job queue. Separate from REDIS_URL on purpose: the cache Redis evicts keys
+# (allkeys-lru, no persistence), and an evicted job is a job that silently never runs.
+QUEUE_REDIS_URL = "QUEUE_REDIS_URL"
 REPO_NAME = "REPO_NAME"
+# Threads one training job may use (hyperparameter search and the estimator together). Defaults
+# to half the CPUs, which is what the search used before it was configurable.
+TRAINING_JOBS = "TRAINING_JOBS"
 VOLUME_PATH = "VOLUME_PATH"
 
 # Environment variable validation list

@@ -2,7 +2,6 @@ from datetime import tzinfo
 from json import loads
 from logging import getLogger
 from math import atan2, modf
-from os import environ
 from typing import Optional
 
 from haversine import haversine_vector
@@ -11,7 +10,8 @@ from pytz import country_timezones, timezone
 from requests import get
 
 from caching import cache
-from definitions import CACHE_TIMEOUTS, COUNTRIES, DATA_RAW_PATH, ENABLED_COUNTRIES
+from definitions import CACHE_TIMEOUTS, DATA_RAW_PATH
+from settings import get_settings
 
 logger = getLogger(__name__)
 
@@ -97,9 +97,7 @@ def check_sensor(city_name: str, sensor_id: str) -> Optional[dict]:
 
 def enabled_country_codes() -> set:
     # Defaults to every supported country; narrow with the ENABLED_COUNTRIES env var.
-    if configured := environ.get(ENABLED_COUNTRIES):
-        return {code.strip().upper() for code in configured.split(",") if code.strip()}
-    return set(COUNTRIES)
+    return set(get_settings().enabled_countries)
 
 
 def fetch_cities() -> list:
