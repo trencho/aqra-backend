@@ -51,3 +51,12 @@ def test_historical_data_missing_data_returns_404(app_context):
     _assert_404_tuple(
         return_historical_data("no-city", sensor, "pollution", 0, 9_999_999_999)
     )
+
+
+def test_missing_data_message_names_the_collection_not_history(app_context):
+    # The pollutants endpoint shares this 404, and it used to tell callers that
+    # "historical data" was missing when they had asked which pollutants a sensor reports.
+    response, _ = fetch_dataframe(Path("no-city") / "no-sensor", "weather")
+    message = response.get_json()["error_message"]
+    assert "historical" not in message
+    assert "weather data is missing" in message

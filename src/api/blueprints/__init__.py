@@ -40,7 +40,7 @@ def fetch_dataframe(
     logger.info("No %s data available for %s", collection, data_path)
     return (
         jsonify(
-            error_message="Cannot return historical data because the data is missing for that city and sensor."
+            error_message=f"Cannot return data because the {collection} data is missing for that city and sensor."
         ),
         HTTPStatus.NOT_FOUND,
     )
