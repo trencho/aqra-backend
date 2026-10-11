@@ -55,6 +55,8 @@ template pulled Google Fonts; `src/api/config/templates/flasgger/head.html` remo
   every response (`docker/nginx.conf`).
 - The rate limiter keys on the real client IP behind both proxies (`TRUSTED_PROXY_HOPS=2` in
   `kubernetes/config-map/flask-config.yml`).
+- Both Redis instances, including the one holding the rate-limit keys, require a password
+  (`requirepass`, `kubernetes/deployment/redis-deployment.yml`).
 - The container runs as an unprivileged user (`docker/Dockerfile`, `securityContext` in
   `kubernetes/deployment/flask-deployment.yml`).
 

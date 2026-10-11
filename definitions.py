@@ -26,6 +26,10 @@ REDIS_URL = "REDIS_URL"
 # Redis for the RQ job queue. Separate from REDIS_URL on purpose: the cache Redis evicts keys
 # (allkeys-lru, no persistence), and an evicted job is a job that silently never runs.
 QUEUE_REDIS_URL = "QUEUE_REDIS_URL"
+# Passwords for the two Redis instances (`requirepass`). Kept out of the URLs above so the URLs
+# can live in a config map; settings.py adds each to its URL.
+REDIS_PASSWORD = "REDIS_PASSWORD"
+QUEUE_REDIS_PASSWORD = "QUEUE_REDIS_PASSWORD"
 REPO_NAME = "REPO_NAME"
 # Threads one training job may use (hyperparameter search and the estimator together). Defaults
 # to half the CPUs, which is what the search used before it was configurable.

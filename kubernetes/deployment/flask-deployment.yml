@@ -56,6 +56,9 @@ spec:
                 name: flask-config
             - secretRef:
                 name: flask-secret
+            # REDIS_PASSWORD and QUEUE_REDIS_PASSWORD; settings.py adds them to the Redis URLs.
+            - secretRef:
+                name: redis-secret
           # Built by CI and pulled from GHCR, not built on the node. The old
           # `aqra-flask` / `Never` pairing required a node-local image, and
           # `docker compose build` writes to Docker's image store while kubelet

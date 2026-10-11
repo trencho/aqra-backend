@@ -50,6 +50,8 @@ spec:
                 name: flask-config
             - secretRef:
                 name: flask-secret
+            - secretRef:
+                name: redis-secret
           # Runs inside the container, which cannot detect a dead container from outside
           # (see GOTCHAS on exec probes). What it CAN tell is whether this host's RQ worker is
           # still heartbeating into the queue, which is the failure that matters here: a
@@ -79,6 +81,8 @@ spec:
                 name: flask-config
             - secretRef:
                 name: flask-secret
+            - secretRef:
+                name: redis-secret
           resources:
             requests:
               cpu: "10m"

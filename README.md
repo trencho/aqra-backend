@@ -117,6 +117,7 @@ the required variables at startup and exits if any are missing.
 | `OPEN_WEATHER_TOKEN`                                                 | upstream weather/air-quality API token              |
 | `GITHUB_TOKEN` / `REPO_NAME`                                         | data-dump backup to a Git repository (worker)       |
 | `QUEUE_REDIS_URL`                                                    | Redis holding the RQ job queue (worker and cron); keep it separate from the cache Redis |
+| `REDIS_PASSWORD` / `QUEUE_REDIS_PASSWORD`                            | `requirepass` for the cache and queue Redis; added to the URLs above at runtime. Required by compose and, in Kubernetes, read from `redis-secret` |
 | `TRAINING_JOBS`                                                      | threads one training job may use; defaults to half the CPUs |
 | `TRUSTED_PROXY_HOPS`                                                 | reverse proxies in front of gunicorn (2 in Kubernetes, 1 in compose) |
 | `REDIS_URL`                                                          | optional shared Redis for the cache + rate limiter (multi-worker/pod); falls back to a filesystem cache + in-memory limits when unset |

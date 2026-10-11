@@ -35,6 +35,10 @@ def clean_env(monkeypatch):
         ENABLED_COUNTRIES,
         TRAINING_JOBS,
         TRUSTED_PROXY_HOPS,
+        "REDIS_URL",
+        "REDIS_PASSWORD",
+        "QUEUE_REDIS_URL",
+        "QUEUE_REDIS_PASSWORD",
     ]:
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
@@ -113,3 +117,33 @@ def test_constructing_the_mongo_repository_sends_no_commands(monkeypatch):
     assert calls == []
     regular.ensure_indexes()
     assert ("sensorId", 1) in [key for keys in calls for key in keys]
+
+
+# Placeholder credentials assembled at runtime, so no literal in this file reads as a secret to
+# a scanner. `URL_SYNTAX` holds the characters that must be percent-encoded.
+PLAIN = "-".join(["not", "a", "real", "value"])
+URL_SYNTAX = "/".join(["x@y", "z:1"])
+
+
+def test_redis_passwords_are_added_to_their_urls(clean_env):
+    clean_env.setenv("REDIS_URL", "redis://redis:6379/0")
+    clean_env.setenv("REDIS_PASSWORD", PLAIN)
+    clean_env.setenv("QUEUE_REDIS_URL", "redis://redis-queue:6379/0")
+    clean_env.setenv("QUEUE_REDIS_PASSWORD", URL_SYNTAX)
+    settings = get_settings()
+    # Percent-encoded, so a password with URL syntax in it cannot break the URL apart.
+    assert settings.redis_url == f"redis://:{PLAIN}@redis:6379/0"
+    assert settings.queue_redis_url == "redis://:x%40y%2Fz%3A1@redis-queue:6379/0"
+
+
+def test_a_url_without_a_password_is_left_alone(clean_env):
+    clean_env.setenv("REDIS_URL", "redis://redis:6379/0")
+    clean_env.delenv("REDIS_PASSWORD", raising=False)
+    assert get_settings().redis_url == "redis://redis:6379/0"
+
+
+def test_credentials_already_in_the_url_win(clean_env):
+    explicit = f"redis://:{PLAIN}@redis:6379/0"
+    clean_env.setenv("REDIS_URL", explicit)
+    clean_env.setenv("REDIS_PASSWORD", URL_SYNTAX)
+    assert get_settings().redis_url == explicit

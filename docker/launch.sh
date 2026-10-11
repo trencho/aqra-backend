@@ -10,6 +10,11 @@ APP_PATH="/app/src/api/app.py"
 # definitions.py lives at /app and the packages under /app/src. gunicorn finds the former only
 # because it starts in /app; a worker started anywhere else could not import it.
 export PYTHONPATH="/app:/app/src${PYTHONPATH:+:${PYTHONPATH}}"
+# The queue URL with its password (settings.with_password), handed to `rq` through the environment
+# variable its CLI reads, so the password never appears on a command line or in `ps`.
+queue_url() {
+  python3 -c 'from settings import get_settings; print(get_settings().queue_redis_url or "")'
+}
 # Highest priority first: an hourly forecast must not wait behind training jobs.
 QUEUES=(forecast ingest maintenance train)
 
@@ -24,10 +29,14 @@ case "${ROLE}" in
     ;;
   worker)
     python3 -m worker bootstrap
-    exec rq worker --url "${QUEUE_REDIS_URL}" "${QUEUES[@]}"
+    RQ_REDIS_URL="$(queue_url)"
+    export RQ_REDIS_URL
+    exec rq worker "${QUEUES[@]}"
     ;;
   cron)
-    exec rq cron --url "${QUEUE_REDIS_URL}" worker.cron
+    RQ_REDIS_URL="$(queue_url)"
+    export RQ_REDIS_URL
+    exec rq cron worker.cron
     ;;
   *)
     echo "Unknown role '${ROLE}'; expected api, worker or cron." >&2
