@@ -15,6 +15,15 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    # pymongo 4.18 supports MongoDB 4.4 as its MINIMUM server, and the Kubernetes deployment
+    # runs exactly 4.4 (the node has no AVX). pymongo raises that floor in minor releases, and
+    # every update here auto-merges, so a routine bump could cut production off its database.
+    # Patches still flow; a minor or major waits until Mongo moves.
+    ignore:
+      - dependency-name: pymongo
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
     groups:
       minor-and-patch:
         update-types:
