@@ -96,6 +96,11 @@ tests/                     # pytest (Flask-Testing) endpoint tests
   (one data read per sensor, UTC throughout, the model's own lag features) and publishes them to
   Mongo first, then to an atomically replaced `predictions.json`; the API serves the file while it
   starts at the upcoming hour and the database copy otherwise.
+- **Storage**: MongoDB is the source of truth for readings; one reading per sensor and hour
+  (unique `(sensorId, time)` index, insert-if-missing writes). `data/raw` and `data/processed`
+  are a cache: the worker's `bootstrap` pushes any reading only the cache holds, then rewrites
+  the raw CSVs from the database atomically. `python -m worker.migrate [--dry-run]` reports,
+  de-duplicates and creates the unique index once.
 - **Data pipeline**: `preparation` (fetch) → `processing` (clean/feature-engineer) → `modeling`
   (train/evaluate) → forecasts + `visualization` plots.
 
@@ -219,5 +224,4 @@ running Mongo version before merging them.
 
 [`ROADMAP.md`](ROADMAP.md) holds the full list with a first step for each item. In order:
 
-1. Make MongoDB the single source of truth, with the processed CSVs as a rebuildable cache.
-2. Publish privacy, terms, cookie, data-source and disclaimer pages (pending FEIT review).
+1. Publish privacy, terms, cookie, data-source and disclaimer pages (pending FEIT review).

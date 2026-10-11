@@ -5,10 +5,7 @@ its first step. Items are ordered by value within each section. Finished work mo
 
 ## Backend: architecture
 
-1. **MongoDB as the single source of truth.** Readings are stored three times (Mongo, raw CSV,
-   processed CSV) and rebuilt from Mongo on every boot. First step: give `weather` and `pollution` a
-   unique `(sensorId, time)` index with upsert writes, then rebuild the CSVs from Mongo as a cache.
-2. **Retire dead code.** `feature_imputation.py`, four regression models that
+1. **Retire dead code.** `feature_imputation.py`, four regression models that
    are never enabled, and helpers with no callers. First step: delete them with their tests, keeping
    the test that pins `get_dummies` without `drop_first`.
 

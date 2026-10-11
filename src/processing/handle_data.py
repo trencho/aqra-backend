@@ -1,11 +1,13 @@
 from json import dumps, loads
 from logging import getLogger
+from os import replace
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 from pandas import DataFrame, concat, read_csv, to_datetime
 
-from definitions import CHUNK_SIZE, COLLECTIONS
+from definitions import CHUNK_SIZE, COLLECTIONS, READING_KEYS
 from repository import get_repository
 
 logger = getLogger(__name__)
@@ -106,26 +108,21 @@ def fetch_summary_dataframe(data_path: Path, index_col: str) -> DataFrame:
 def save_dataframe(
     dataframe: DataFrame, collection: str, collection_path: Path, sensor_id: str
 ) -> None:
+    """Store new readings in the database, then append them to the local CSV cache.
+
+    The database is the source of truth and is written first. The insert skips any
+    (sensorId, time) already stored, so nothing reads the sensor's collection back first.
+    """
     dataframe = rename_features(dataframe)
     dataframe = drop_unnecessary_features(dataframe)
-
-    db_records = DataFrame(
-        get_repository().get_many(
-            collection_name=collection,
-            filter={"sensorId": sensor_id},
-            projection={"_id": False},
-        )
-    )
-    if len(db_records.index) > 0:
-        dataframe = find_missing_data(dataframe, db_records, "time")
-
     dataframe = trim_dataframe(dataframe, "time")
     if len(dataframe.index) == 0:
         return
 
-    dataframe.loc[:, "sensorId"] = sensor_id
-    get_repository().save_many(
-        collection_name=collection, items=dataframe.to_dict("records")
+    get_repository().insert_missing(
+        collection,
+        dataframe.assign(sensorId=sensor_id).to_dict("records"),
+        READING_KEYS,
     )
 
     try:
@@ -135,10 +132,17 @@ def save_dataframe(
         logger.exception(
             f"Could not fetch data from local storage for {sensor_id} - {collection}",
         )
-    dataframe = dataframe.drop(columns="sensorId", errors="ignore")
     dataframe.to_csv(
         collection_path, header=not collection_path.exists(), index=False, mode="a"
     )
+
+
+def write_csv_atomically(dataframe: DataFrame, path: Path) -> None:
+    """Replace `path` in one rename, so a reader never sees a half-written cache file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staged = path.with_name(f".{path.name}.{uuid4().hex}")
+    dataframe.to_csv(staged, index=False)
+    replace(staged, path)
 
 
 def store_dtypes(file_path: Path, collection: str, dtypes: dict) -> None:

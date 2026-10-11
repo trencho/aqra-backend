@@ -108,6 +108,18 @@ kubectl exec -n aqra deploy/worker -c worker -- rq info --url redis://redis-queu
 kubectl exec -n aqra deploy/worker -c worker -- python3 -m worker bootstrap   # enqueue a job by hand
 ```
 
+###### Readings in MongoDB
+
+The database holds one reading per sensor and hour. Run the migration once when the cluster is
+back: it reports first, then pushes any reading only the CSV cache holds, removes duplicate
+readings older code could insert, and creates the unique `(sensorId, time)` index. A second run
+changes nothing.
+
+```
+kubectl exec -n aqra deploy/worker -c worker -- python3 -m worker.migrate --dry-run
+kubectl exec -n aqra deploy/worker -c worker -- python3 -m worker.migrate
+```
+
 The nightly `flask-restart` CronJob is gone: it restarted the API to release memory the in-process
 training held. `kubectl apply -k` does not prune, so delete it once by hand:
 
