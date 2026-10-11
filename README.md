@@ -86,6 +86,12 @@ tests/                     # pytest (Flask-Testing) endpoint tests
   schedule in `src/worker/cron.py` (UTC). Training fans out to one job per city, sensor and
   pollutant, each with a unique id, so a model still training is never queued twice. Same image as
   the API; `docker/launch.sh api|worker|cron` picks the role.
+- **Model registry**: `src/models/registry.py`. Every training run writes its own
+  `models/<city>/<sensor>/<pollutant>/runs/<run_id>/` (model, scaler, features, and a manifest
+  with the model class, library versions, training window and held-out metrics). A run is
+  served only after it loads back and verifies, by atomically replacing the `current` pointer;
+  the last three runs stay as a rollback. The evaluation endpoints read the current run's
+  manifest.
 - **Data pipeline**: `preparation` (fetch) → `processing` (clean/feature-engineer) → `modeling`
   (train/evaluate) → forecasts + `visualization` plots.
 
@@ -209,7 +215,6 @@ running Mongo version before merging them.
 
 [`ROADMAP.md`](ROADMAP.md) holds the full list with a first step for each item. In order:
 
-1. Version model artefacts per training run behind an atomic `current` pointer.
-2. Extract a forecast service with UTC time, an in-process model cache and one data read per sensor.
-3. Make MongoDB the single source of truth, with the processed CSVs as a rebuildable cache.
-4. Publish privacy, terms, cookie, data-source and disclaimer pages (pending FEIT review).
+1. Extract a forecast service with UTC time, an in-process model cache and one data read per sensor.
+2. Make MongoDB the single source of truth, with the processed CSVs as a rebuildable cache.
+3. Publish privacy, terms, cookie, data-source and disclaimer pages (pending FEIT review).

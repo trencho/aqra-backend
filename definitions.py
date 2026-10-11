@@ -105,10 +105,12 @@ COUNTRIES = {
 
 # Pollutant types and mappings
 # Version of the on-disk model artefact set (model + selected_features + scaler + manifest).
+# 2: versioned run directories behind a `current` pointer (models/registry.py), with the model
+# class, library versions, training window and metrics in the manifest.
 # Bumping this retires every previously trained artefact: the forecast loader refuses a
 # directory whose manifest carries a different schema, so the worker retrains it rather
 # than serving numbers produced by an older pipeline.
-PIPELINE_SCHEMA = 1
+PIPELINE_SCHEMA = 2
 
 POLLUTANTS = {
     "aqi": "AQI",

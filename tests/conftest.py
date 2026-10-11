@@ -95,3 +95,31 @@ def pytest_unconfigure(config: pytest.Config) -> None:
             directory.rmdir()
         except OSError:
             break
+
+
+@pytest.fixture
+def publish_model(tmp_path, monkeypatch):
+    """Publish a trained model through the registry under a temp MODELS_PATH.
+
+    Returns ``publish(city, sensor, pollutant, model, features, scaler, metrics=None)``,
+    which writes a run exactly as training does (model first, manifest last) and moves the
+    ``current`` pointer to it, returning the run directory.
+    """
+    from modeling.train_model import save_pipeline
+    from models import registry
+
+    models_path = tmp_path / "models"
+    monkeypatch.setattr(registry, "MODELS_PATH", models_path)
+    registry.load_run.cache_clear()
+
+    def publish(city, sensor, pollutant, model, features, scaler, metrics=None):
+        key = registry.ModelKey(city, sensor, pollutant)
+        run_dir = registry.new_run_dir(key)
+        model.save(run_dir)
+        save_pipeline(run_dir, features, scaler, type(model).__name__, metrics=metrics)
+        assert registry.publish(key, run_dir, verify=registry.load_run)
+        return run_dir
+
+    publish.models_path = models_path
+    yield publish
+    registry.load_run.cache_clear()

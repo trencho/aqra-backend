@@ -1,13 +1,12 @@
 """Hermetic tests for model loading in ``processing/forecast_data``.
 
-``load_regression_model`` is the forecast-side counterpart of the model save/load
-path, so it also guards the LightGBM ``NotFittedError`` regression: a saved model
-must be reloadable and able to predict. ``MODELS_PATH`` is monkeypatched to a temp
-dir so nothing touches the real models tree, and a NullCache app context satisfies
-the ``@cache.memoize`` decorator.
+``load_regression_model`` reads the registry's current run, so it also guards the
+LightGBM ``NotFittedError`` regression: a published model must be reloadable and able
+to predict. The ``publish_model`` fixture (conftest.py) points the registry at a temp
+tree, and a NullCache app context satisfies the remaining ``@cache.memoize`` decorators.
 """
 
-from json import dumps
+from json import dumps, loads
 from pathlib import Path
 
 import numpy as np
@@ -21,7 +20,7 @@ import api.config  # noqa: F401
 from api.config.cache import cache
 from definitions import PIPELINE_SCHEMA
 from modeling.train_model import save_pipeline
-from models import make_model
+from models import make_model, registry
 from processing import forecast_data
 from processing.feature_scaling import fit_scaler
 
@@ -34,22 +33,17 @@ def app_context():
         yield
 
 
-def test_load_regression_model_roundtrips_lightgbm(app_context, tmp_path, monkeypatch):
+def test_load_regression_model_roundtrips_lightgbm(app_context, publish_model):
     # Regression for the LightGBM save/load bug: the reloaded model must predict
     # without raising NotFittedError.
-    monkeypatch.setattr(forecast_data, "MODELS_PATH", tmp_path)
-    model_dir = tmp_path / "skopje" / "1000" / "pm2_5"
-    model_dir.mkdir(parents=True)
-
     rng = np.random.RandomState(0)
     x = rng.rand(100, 3)
     y = x @ np.array([1.0, 2.0, -1.0])
     model = make_model("LightGBMRegressionModel")
     model.set_params(verbose=-1)
     model.train(x, y)
-    model.save(model_dir)
     _, scaler = fit_scaler(DataFrame(x, columns=["a", "b", "c"]))
-    save_pipeline(model_dir, ["a", "b", "c"], scaler)
+    publish_model("skopje", "1000", "pm2_5", model, ["a", "b", "c"], scaler)
 
     result = forecast_data.load_regression_model("skopje", "1000", "pm2_5")
     assert result is not None
@@ -60,8 +54,7 @@ def test_load_regression_model_roundtrips_lightgbm(app_context, tmp_path, monkey
     assert len(predictions) == len(y)
 
 
-def test_load_regression_model_missing_returns_none(app_context, tmp_path, monkeypatch):
-    monkeypatch.setattr(forecast_data, "MODELS_PATH", tmp_path)
+def test_load_regression_model_missing_returns_none(app_context, publish_model):
     assert forecast_data.load_regression_model("nope", "nope", "pm2_5") is None
 
 
@@ -117,32 +110,62 @@ def test_recursive_forecast_logs_each_step_it_could_not_predict(
     assert all(record.exc_info is not None for record in caplog.records)
 
 
-def test_a_model_without_a_manifest_is_refused(app_context, tmp_path, monkeypatch):
-    """Every artefact trained before the scaler was persisted is retired by this check.
+def test_a_pre_registry_model_directory_is_refused(app_context, publish_model):
+    """Every artefact trained before the registry is retired by this check.
 
     It matters more here than it looks: the cluster this deploys to has been unreachable since
-    2026-08-26, so purging models/ by hand is not currently possible. The loader refusing them is
-    what makes the old artefacts stop being served.
+    2026-08-26, so purging models/ by hand is not currently possible. Those flat directories
+    have no `current` pointer, so the loader finds nothing and the worker retrains them.
     """
-    monkeypatch.setattr(forecast_data, "MODELS_PATH", tmp_path)
-    model_dir = tmp_path / "skopje" / "1000" / "pm2_5"
+    model_dir = publish_model.models_path / "skopje" / "1000" / "pm2_5"
     model_dir.mkdir(parents=True)
     (model_dir / "LightGBMRegressionModel.mdl").write_bytes(b"not read")
     (model_dir / "selected_features.json").write_text(dumps(["a"]))
+    (model_dir / "pipeline.json").write_text(dumps({"schema": 1, "features": ["a"]}))
 
     assert forecast_data.load_regression_model("skopje", "1000", "pm2_5") is None
 
 
-def test_a_scaler_is_never_loaded_as_the_model(app_context, tmp_path, monkeypatch):
-    """The loader globs *.mdl and takes files[0], so the scaler must not use that suffix."""
-    monkeypatch.setattr(forecast_data, "MODELS_PATH", tmp_path)
-    model_dir = tmp_path / "skopje" / "1000" / "pm2_5"
-    model_dir.mkdir(parents=True)
-    _, scaler = fit_scaler(DataFrame({"a": [1.0, 2.0]}))
-    save_pipeline(model_dir, ["a"], scaler)
+def test_a_run_from_an_older_schema_is_refused(tmp_path):
+    run_dir = tmp_path / "run"
+    model = make_model("LinearRegressionModel")
+    model.train(np.arange(4.0).reshape(-1, 1), np.arange(4.0))
+    run_dir.mkdir()
+    model.save(run_dir)
+    _, scaler = fit_scaler(DataFrame({"a": [0.0, 1.0, 2.0, 3.0]}))
+    save_pipeline(run_dir, ["a"], scaler, "LinearRegressionModel")
+    manifest = loads((run_dir / "pipeline.json").read_text())
+    manifest["schema"] = PIPELINE_SCHEMA - 1
+    (run_dir / "pipeline.json").write_text(dumps(manifest))
 
-    assert not list(model_dir.glob("scaler*.mdl"))
-    assert (model_dir / "scaler.pkl").exists()
+    assert registry.load_run(run_dir) is None
+
+
+def test_the_manifest_names_the_model_so_a_stale_mdl_is_never_loaded(
+    app_context, publish_model
+):
+    """The loader used to take glob("*.mdl")[0], so a previous winner's file could be served.
+
+    A run directory holds one model and the manifest names its class; a stray file beside
+    it is ignored.
+    """
+    model = make_model("LinearRegressionModel")
+    model.train(np.arange(8.0).reshape(-1, 1), np.arange(8.0))
+    _, scaler = fit_scaler(DataFrame({"a": np.arange(8.0)}))
+    run_dir = publish_model("skopje", "1000", "pm2_5", model, ["a"], scaler)
+    (run_dir / "AnOldWinner.mdl").write_bytes(b"garbage")
+    registry.load_run.cache_clear()
+
+    loaded_model, _, _ = forecast_data.load_regression_model("skopje", "1000", "pm2_5")
+    assert type(loaded_model).__name__ == "LinearRegressionModel"
+
+
+def test_a_scaler_is_never_saved_as_a_model(tmp_path):
+    _, scaler = fit_scaler(DataFrame({"a": [1.0, 2.0]}))
+    save_pipeline(tmp_path, ["a"], scaler, "LinearRegressionModel")
+
+    assert not list(tmp_path.glob("scaler*.mdl"))
+    assert (tmp_path / "scaler.pkl").exists()
 
 
 def test_disagreeing_artefacts_are_refused():

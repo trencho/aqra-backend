@@ -20,7 +20,6 @@ from pandas import DataFrame, DatetimeIndex, Series, Timedelta, date_range
 # in order — importing a ``processing`` submodule first hits a circular import.
 import api.config  # noqa: F401
 from api.config.cache import cache
-from modeling.train_model import save_pipeline
 from models import make_model
 from processing import forecast_data
 from processing.feature_generation import generate_features
@@ -39,15 +38,13 @@ def app_context():
 
 
 @pytest.fixture
-def forecast_env(tmp_path, monkeypatch):
+def forecast_env(tmp_path, monkeypatch, publish_model):
     """Seed processed CSVs + a saved model for skopje/1000/pm2_5 and point
     forecast_data at the temp tree."""
     processed = tmp_path / "processed"
-    models_path = tmp_path / "models"
+    models_path = publish_model.models_path
     sensor_dir = processed / "skopje" / "1000"
     sensor_dir.mkdir(parents=True)
-    model_dir = models_path / "skopje" / "1000" / "pm2_5"
-    model_dir.mkdir(parents=True)
 
     n = 400
     index = date_range(end=current_hour(), periods=n, freq="h")
@@ -73,15 +70,13 @@ def forecast_env(tmp_path, monkeypatch):
     features = generate_features(target, 25)[_TIME_FEATURES].dropna()
     model = make_model("LinearRegressionModel")
     model.train(features, target.loc[features.index])
-    model.save(model_dir)
     # The scaler is fitted on the same features the model was trained on, and saved beside it
     # with the manifest that ties the three together. Without pipeline.json the loader refuses
     # the directory, which is the behaviour that retires every pre-scaler artefact.
     _, scaler = fit_scaler(features)
-    save_pipeline(model_dir, _TIME_FEATURES, scaler)
+    publish_model("skopje", "1000", "pm2_5", model, _TIME_FEATURES, scaler)
 
     monkeypatch.setattr(forecast_data, "DATA_PROCESSED_PATH", processed)
-    monkeypatch.setattr(forecast_data, "MODELS_PATH", models_path)
     return processed, models_path
 
 

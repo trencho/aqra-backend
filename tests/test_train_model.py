@@ -20,12 +20,8 @@ def training_stubs(monkeypatch, tmp_path):
     """Neuter everything training does to disk, leaving only the outcome decision."""
     from modeling import train_model
 
-    monkeypatch.setattr(train_model, "MODELS_PATH", tmp_path / "models")
     monkeypatch.setattr(train_model, "DATA_PROCESSED_PATH", tmp_path / "processed")
-    monkeypatch.setattr(train_model, "check_best_regression_model", lambda path: False)
-    monkeypatch.setattr(train_model, "check_pollutant_lock", lambda path: False)
-    monkeypatch.setattr(train_model, "create_pollutant_lock", lambda path: None)
-    monkeypatch.setattr(train_model, "remove_pollutant_lock", lambda path: None)
+    monkeypatch.setattr(train_model, "check_best_regression_model", lambda key: False)
     monkeypatch.setattr(train_model, "draw_errors", lambda *args: None)
     monkeypatch.setattr(train_model, "draw_predictions", lambda *args: None)
     trained = []
@@ -81,7 +77,7 @@ def test_train_regression_model_reports_skipped_when_a_model_already_exists(
     training_stubs, monkeypatch
 ):
     train_model, _ = training_stubs
-    monkeypatch.setattr(train_model, "check_best_regression_model", lambda path: True)
+    monkeypatch.setattr(train_model, "check_best_regression_model", lambda key: True)
 
     assert (
         train_model.train_regression_model(_CITY, _SENSOR, "pm2_5")
