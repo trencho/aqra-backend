@@ -3,11 +3,12 @@ from typing import Optional
 
 from flasgger import swag_from
 from flask import Blueprint, Response, jsonify
-from pandas import isna, read_csv
+from pandas import isna
 
 from api.config.cache import cache
 from api.config.converters import PollutantType
-from definitions import CACHE_TIMEOUTS, MODELS_PATH, POLLUTANTS, RESULTS_ERRORS_PATH
+from definitions import CACHE_TIMEOUTS, POLLUTANTS
+from models.registry import ModelKey, current_dir, read_manifest
 from preparation import check_city, check_sensor
 
 evaluation_blueprint = Blueprint("evaluation", __name__)
@@ -16,31 +17,18 @@ evaluation_blueprint = Blueprint("evaluation", __name__)
 def _read_best_model_evaluation(
     city_name: str, sensor_id: str, pollutant: str
 ) -> Optional[dict]:
-    # The forecast is served by the best model saved at the pollutant dir; report that
-    # model's held-out error metrics (written per model during training).
-    pollutant_dir = MODELS_PATH / city_name / sensor_id / pollutant
-    if not (models := list(pollutant_dir.glob("*.mdl"))):
+    # The forecast is served by the registry's current run; report that run's model and the
+    # held-out errors its manifest recorded when it was published.
+    run_dir = current_dir(ModelKey(city_name, sensor_id, pollutant))
+    if run_dir is None or (manifest := read_manifest(run_dir)) is None:
         return None
-
-    model_name = models[0].stem
-    error_file = (
-        RESULTS_ERRORS_PATH
-        / "data"
-        / city_name
-        / sensor_id
-        / pollutant
-        / model_name
-        / "error.csv"
-    )
-    if not error_file.exists():
+    if not (model_name := manifest.get("model", {}).get("class")):
         return None
-
-    row = read_csv(error_file).iloc[0]
     return {
         "model": model_name,
         "metrics": {
-            column: (None if isna(value) else float(value))
-            for column, value in row.items()
+            name: (None if isna(value) else float(value))
+            for name, value in (manifest.get("metrics") or {}).items()
         },
     }
 

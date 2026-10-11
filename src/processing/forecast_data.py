@@ -1,22 +1,19 @@
 from datetime import datetime, timedelta
-from json import JSONDecodeError, loads
 from logging import getLogger
 from math import isnan, nan
-from pickle import load as pickle_load
 from typing import Optional
 
 from pandas import DataFrame, Series, concat, date_range
 
 from caching import cache
-from definitions import (
-    CACHE_TIMEOUTS,
-    DATA_PROCESSED_PATH,
-    MODELS_PATH,
-    PIPELINE_SCHEMA,
-    POLLUTANTS,
-)
-from models import make_model
+from definitions import CACHE_TIMEOUTS, DATA_PROCESSED_PATH, POLLUTANTS
 from models.base_regression_model import BaseRegressionModel
+from models.registry import (  # noqa: F401  (re-exported for callers and tests)
+    ModelArtifactMismatch,
+    ModelKey,
+    load_current,
+    verify_pipeline,
+)
 
 from .feature_generation import encode_categorical_data, generate_features
 from .feature_scaling import apply_scaler
@@ -96,80 +93,15 @@ def forecast_sensor(city_name: str, sensor_id: str, timestamp: int) -> dict:
     return {}
 
 
-class ModelArtifactMismatch(ValueError):
-    """A model, its feature list and its scaler do not describe the same training run."""
-
-
-@cache.memoize(timeout=CACHE_TIMEOUTS["1h"])
 def load_regression_model(
     city_name: str, sensor_id: str, pollutant: str
 ) -> Optional[tuple]:
-    """Load a model with its features and scaler, or None if they do not agree.
+    """The current run's model, features and scaler, or None if nothing servable exists.
 
-    None means "nothing servable here", which the caller already handles. The schema check is also
-    what retires every artefact trained before the scaler was persisted: those directories have no
-    pipeline.json, so they are refused here and the scheduler retrains them. That matters more
-    than usual, because purging models/ by hand needs a cluster that has been unreachable since
-    2026-08-26.
+    None also covers every artefact trained before the registry: those directories have no
+    `current` pointer and no schema-2 manifest, so the worker retrains them instead.
     """
-    model_dir = MODELS_PATH / city_name / sensor_id / pollutant
-    manifest_path = model_dir / "pipeline.json"
-    if not manifest_path.exists():
-        return None
-
-    try:
-        manifest = loads(manifest_path.read_text())
-    except JSONDecodeError:
-        logger.warning("%s: pipeline.json is not readable JSON; skipping", model_dir)
-        return None
-
-    if manifest.get("schema") != PIPELINE_SCHEMA:
-        logger.info(
-            "%s: pipeline schema %s, expected %s; skipping until retrained",
-            model_dir,
-            manifest.get("schema"),
-            PIPELINE_SCHEMA,
-        )
-        return None
-
-    # `scaler.pkl` deliberately does NOT use the .mdl suffix: this glob takes files[0] as the
-    # model, so a scaler saved as .mdl could be loaded as one.
-    files = [f for f in model_dir.glob("*.mdl")]
-    scaler_path = model_dir / "scaler.pkl"
-    if not files or not scaler_path.exists():
-        logger.warning("%s: model directory is incomplete; skipping", model_dir)
-        return None
-
-    model_name = files[0].stem
-    model = make_model(model_name)
-
-    model.load(model_dir)
-    model_features = loads((model_dir / "selected_features.json").read_text())
-    with open(scaler_path, "rb") as in_file:
-        scaler = pickle_load(in_file)
-
-    try:
-        verify_pipeline(model_dir, manifest, model, model_features, scaler)
-    except ModelArtifactMismatch as mismatch:
-        logger.error("%s: %s", model_dir, mismatch)
-        return None
-
-    return model, model_features, scaler
-
-
-def verify_pipeline(model_dir, manifest, model, model_features, scaler) -> None:
-    """Refuse a set whose parts disagree, rather than serving mismatched columns."""
-    if list(manifest.get("features", [])) != list(model_features):
-        raise ModelArtifactMismatch(
-            "the manifest's feature list and selected_features.json differ"
-        )
-
-    scaler_features = getattr(scaler, "feature_names_in_", None)
-    if scaler_features is not None and len(scaler_features) != len(model_features):
-        raise ModelArtifactMismatch(
-            f"the scaler was fitted on {len(scaler_features)} features, "
-            f"the model expects {len(model_features)}"
-        )
+    return load_current(ModelKey(city_name, sensor_id, pollutant))
 
 
 @cache.memoize(timeout=CACHE_TIMEOUTS["1h"])
