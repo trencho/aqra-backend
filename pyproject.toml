@@ -23,7 +23,8 @@ select = ["F401", "F811", "I"]
 # The application packages live under src/ and import as top-level names (`api`, `processing`,
 # ...). Without this every internal import is reported as an undeclared dependency.
 known_first_party = [
-    "api", "definitions", "modeling", "models", "preparation", "processing", "utils", "visualization",
+    "api", "backup", "caching", "definitions", "modeling", "models", "preparation", "processing",
+    "repository", "settings", "utils", "visualization", "worker",
 ]
 
 [tool.deptry.per_rule_ignores]
@@ -34,8 +35,6 @@ known_first_party = [
 #   pytest, pytest-xdist, Flask-Testing   test tooling, invoked as commands
 #   pandas-stubs / scipy-stubs            type stubs, consumed by the type checker only
 #   py-unused-deps  a dependency-analysis tool, invoked as a command
-#   redis           the cache backend Flask-Caching imports at runtime when REDIS_URL is set;
-#                   this codebase only ever passes a URL string
 #
 # NOT ignored, deliberately: `psutil`. It is declared in requirements/common.txt (production)
 # and referenced nowhere in the codebase; the compiled prod tree shows it arriving solely `via
@@ -45,5 +44,5 @@ known_first_party = [
 # them and uploads them as a run artifact, so read one from there to re-check this.)
 DEP002 = [
     "gunicorn", "black", "ruff", "pytest", "pytest-xdist", "Flask-Testing",
-    "pandas-stubs", "scipy-stubs", "py-unused-deps", "redis",
+    "pandas-stubs", "scipy-stubs", "py-unused-deps",
 ]

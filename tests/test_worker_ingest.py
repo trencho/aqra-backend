@@ -1,4 +1,4 @@
-"""Tests for the two scheduled jobs in ``src/api/config/schedule``.
+"""Tests for two ingest jobs in ``src/worker/ingest``.
 
 ``import_data`` carries a regression test for its walk + rmdir (bug A2): after importing
 files it prunes empty leftover directories under ``DATA_EXTERNAL_PATH`` with
@@ -15,12 +15,9 @@ every downstream job then had nothing to iterate over until the next successful 
 
 from json import dumps, loads
 
-# Import the config package first so the api/preparation/processing chain initialises in
-# order — importing the ``api.config.schedule`` submodule first hits a circular import.
-import api.config  # noqa: F401
-from api.config import schedule
-from api.config.schedule import fetch_locations, import_data
 from repository import get_repository
+from worker import ingest
+from worker.ingest import fetch_locations, import_data
 
 
 def test_import_data_removes_empty_external_subdirectory(tmp_path, monkeypatch):
@@ -32,8 +29,8 @@ def test_import_data_removes_empty_external_subdirectory(tmp_path, monkeypatch):
     raw.mkdir()
 
     # ``import_data`` reads these as module-level names, so patch them on the module.
-    monkeypatch.setattr(schedule, "DATA_EXTERNAL_PATH", external)
-    monkeypatch.setattr(schedule, "DATA_RAW_PATH", raw)
+    monkeypatch.setattr(ingest, "DATA_EXTERNAL_PATH", external)
+    monkeypatch.setattr(ingest, "DATA_RAW_PATH", raw)
 
     # Must not raise (the pre-fix ``str.rmdir()`` raised AttributeError here).
     import_data()
@@ -63,11 +60,11 @@ def _stub_locations(monkeypatch, tmp_path, *, countries, cities, sensors):
     raw.mkdir()
     cache = _StubCache()
 
-    monkeypatch.setattr(schedule, "DATA_RAW_PATH", raw)
-    monkeypatch.setattr(schedule, "cache", cache)
-    monkeypatch.setattr(schedule, "fetch_countries", lambda: countries)
-    monkeypatch.setattr(schedule, "fetch_cities", lambda: cities)
-    monkeypatch.setattr(schedule, "fetch_sensors", lambda city_name: sensors)
+    monkeypatch.setattr(ingest, "DATA_RAW_PATH", raw)
+    monkeypatch.setattr(ingest, "cache", cache)
+    monkeypatch.setattr(ingest, "fetch_countries", lambda: countries)
+    monkeypatch.setattr(ingest, "fetch_cities", lambda: cities)
+    monkeypatch.setattr(ingest, "fetch_sensors", lambda city_name: sensors)
     # The per-item repository writes are not what these tests are about, and a real
     # repository would need a database.
     monkeypatch.setattr(get_repository(), "save", lambda **kwargs: None, raising=False)
@@ -154,13 +151,13 @@ def test_fetch_locations_summarises_what_it_managed_to_save(
 
     monkeypatch.setattr(get_repository(), "save", refuse, raising=False)
 
-    with caplog.at_level("INFO", logger=schedule.__name__):
+    with caplog.at_level("INFO", logger=ingest.__name__):
         fetch_locations()
 
     summaries = {
         record.message.split(":")[0]: record
         for record in caplog.records
-        if record.name == schedule.__name__ and " -- " in record.message
+        if record.name == ingest.__name__ and " -- " in record.message
     }
     # One per sub-batch: countries, cities and sensors fail for different reasons and are
     # counted apart so the log says which upstream is broken.
@@ -185,13 +182,13 @@ def test_fetch_locations_reports_a_clean_run_without_raising_the_level(
         monkeypatch, tmp_path, countries=[_COUNTRY], cities=[_CITY], sensors=[_SENSOR]
     )
 
-    with caplog.at_level("INFO", logger=schedule.__name__):
+    with caplog.at_level("INFO", logger=ingest.__name__):
         fetch_locations()
 
     summaries = [
         record
         for record in caplog.records
-        if record.name == schedule.__name__ and " -- " in record.message
+        if record.name == ingest.__name__ and " -- " in record.message
     ]
     assert len(summaries) == 3
     assert all(record.levelname == "INFO" for record in summaries)

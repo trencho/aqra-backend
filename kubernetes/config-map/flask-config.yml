@@ -8,9 +8,15 @@ data:
   MONGO_DATABASE: "air-quality"
   MONGODB_CONNECTION: "mongodb"
   MONGODB_HOSTNAME: "mongo:27017"
-  PYTHONPATH: "/app/src"
+  # /app for definitions.py, /app/src for the packages.
+  PYTHONPATH: "/app:/app/src"
+  # The RQ job queue (redis-queue-deployment.yml), not the cache Redis below.
+  QUEUE_REDIS_URL: "redis://redis-queue:6379/0"
   REDIS_URL: "redis://redis:6379/0"
   REPO_NAME: "air-quality-data-dump"
+  # Threads per training job. The worker container requests half a CPU and has no CPU limit;
+  # raise this once the node's real core count is known.
+  TRAINING_JOBS: "2"
   # ingress-nginx, then the pod's nginx: two proxies append to X-Forwarded-For.
   TRUSTED_PROXY_HOPS: "2"
   TZ: "Europe/Skopje"

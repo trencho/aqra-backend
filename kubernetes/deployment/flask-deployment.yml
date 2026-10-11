@@ -6,11 +6,10 @@ metadata:
   name: flask
   namespace: aqra
 spec:
-  # Must exceed the startupProbe budget below (90 x 10s = 15 min), or the Deployment
-  # reports ProgressDeadlineExceeded -- and `kubectl rollout status` fails the deploy --
-  # while the pod is still legitimately starting. The default is 600s, which is shorter
-  # than this container's own worst-case boot.
-  progressDeadlineSeconds: 1200
+  # Must exceed the startupProbe budget below, or the Deployment reports
+  # ProgressDeadlineExceeded -- and `kubectl rollout status` fails the deploy -- while the
+  # pod is still legitimately starting.
+  progressDeadlineSeconds: 600
   replicas: 1
   selector:
     matchLabels:
@@ -64,22 +63,13 @@ spec:
           # /api/v1/* returned 503. Same bug, same fix, as aqra-frontend PR #10.
           image: ghcr.io/trencho/aqra-backend:latest
           imagePullPolicy: Always
-          # This container cannot serve anything until a bulk data fetch finishes.
-          # create_app() calls init_data() BEFORE returning (src/api/config/__init__.py),
-          # and gunicorn imports the factory, so the worker does not bind a port until
-          # that pulse.eco fetch completes. On a cold volume that is minutes.
-          #
-          # The old settings could not survive that. Liveness had failureThreshold: 1
-          # with initialDelaySeconds: 60 and timeoutSeconds: 60, so a container that
-          # was not answering by ~t+120s was killed and restarted straight back into
-          # the same race -- an unwinnable crash loop, whatever the image. It is the
-          # same failureThreshold: 1 pattern that drove mongo's ~1,050 restarts.
-          #
-          # A startupProbe is the mechanism built for exactly this: while it is
-          # running, liveness and readiness are disabled entirely, so a slow boot can
-          # never be mistaken for a hung process. 90 x 10s = 15 minutes of grace.
+          # create_app() no longer fetches anything: the bulk data fetch that used to block
+          # gunicorn from binding for minutes runs in the worker (worker-deployment.yml).
+          # Booting is now importing the app, so 3 minutes (18 x 10s) of startup grace is
+          # plenty. Liveness and readiness stay off until it passes, so a slow import on a
+          # busy node is still never mistaken for a hung process.
           startupProbe:
-            failureThreshold: 90
+            failureThreshold: 18
             httpGet:
               path: /api/v1/healthz/live
               port: 8080
@@ -108,7 +98,14 @@ spec:
             # 8080, not 80: an unprivileged process cannot bind below 1024 without
             # CAP_NET_BIND_SERVICE. The Service still publishes 80 and targets this.
             - containerPort: 8080
-          resources: { }
+          # The pod used to declare nothing while it also trained models. Training is in the
+          # worker now; these bound the API alone. Tune from real usage once the cluster is back.
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              memory: "3Gi"
           volumeMounts:
             - mountPath: /var/api
               name: flask-data

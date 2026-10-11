@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: worker
+  name: worker
+  namespace: aqra
+spec:
+  # bootstrap (the location refresh and the CSV rebuild from Mongo) runs before the worker
+  # starts draining, and on a cold volume that takes minutes. The liveness probe tolerates it
+  # through initialDelaySeconds; this keeps `rollout status` from giving up first.
+  progressDeadlineSeconds: 1200
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: worker
+  # One worker at a time: two would share the ReadWriteOnce hostPath volume with the API and
+  # write the same CSVs and model directories.
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.network/aqra-network: "true"
+        io.kompose.service: worker
+    spec:
+      automountServiceAccountToken: false
+      # A training job interrupted mid-run is lost, so give the current one time to finish.
+      # RQ's warm shutdown waits for the running job on SIGTERM.
+      terminationGracePeriodSeconds: 600
+      # Same reason and same fix as flask-deployment.yml: hostPath ignores fsGroup.
+      initContainers:
+        - name: fix-data-ownership
+          image: ghcr.io/trencho/aqra-backend:latest
+          imagePullPolicy: Always
+          command: [ "chown", "-R", "1001:1001", "/var/api" ]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          volumeMounts:
+            - mountPath: /var/api
+              name: flask-data
+      containers:
+        - name: worker
+          image: ghcr.io/trencho/aqra-backend:latest
+          imagePullPolicy: Always
+          args: [ "worker" ]
+          envFrom:
+            - configMapRef:
+                name: flask-config
+            - secretRef:
+                name: flask-secret
+          # Runs inside the container, which cannot detect a dead container from outside
+          # (see GOTCHAS on exec probes). What it CAN tell is whether this host's RQ worker is
+          # still heartbeating into the queue, which is the failure that matters here: a
+          # worker wedged in a job keeps its process alive and stops heartbeating.
+          livenessProbe:
+            exec:
+              command: [ "python3", "-m", "worker.health" ]
+            initialDelaySeconds: 900
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "4Gi"
+          volumeMounts:
+            - mountPath: /var/api
+              name: flask-data
+        - name: cron
+          image: ghcr.io/trencho/aqra-backend:latest
+          imagePullPolicy: Always
+          args: [ "cron" ]
+          envFrom:
+            - configMapRef:
+                name: flask-config
+            - secretRef:
+                name: flask-secret
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "96Mi"
+            limits:
+              memory: "256Mi"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+      volumes:
+        - name: flask-data
+          persistentVolumeClaim:
+            claimName: flask-data-pvc

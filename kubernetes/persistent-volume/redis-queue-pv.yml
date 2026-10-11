@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  labels:
+    type: local
+  name: redis-queue-pv
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 1Gi
+  claimRef:
+    name: redis-queue-pvc
+    namespace: aqra
+  hostPath:
+    # A new directory on the node, so let kubelet create it; the init container in
+    # redis-queue-deployment.yml then hands it to the redis uid.
+    path: /mnt/aqra/queue
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual

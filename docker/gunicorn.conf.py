@@ -10,6 +10,10 @@ chdir = "/app/src/api"
 # to both live under /tmp. nginx's proxy_pass in docker/nginx.conf points at the same path.
 pidfile = "/tmp/gunicorn.pid"
 bind = ["unix:/tmp/gunicorn.socket"]
+# gunicorn 25.1+ opens a control socket at $HOME/.gunicorn/gunicorn.ctl by default. The app user
+# has no home directory, so the master logged "Control server error: Permission denied:
+# '/home/app'" on every boot. /tmp, like the pid file and the socket above.
+control_socket = "/tmp/gunicorn.ctl"
 workers = cpu_count() * 2 + 1
 threads = 4
 max_requests = 500

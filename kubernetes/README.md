@@ -87,6 +87,35 @@ kubectl apply -k kubernetes
 kubectl apply -f kubernetes/deployment/flask-deployment.yml
 kubectl apply -f kubernetes/deployment/mongo-deployment.yml
 kubectl apply -f kubernetes/deployment/redis-deployment.yml
+kubectl apply -f kubernetes/deployment/redis-queue-deployment.yml
+kubectl apply -f kubernetes/deployment/worker-deployment.yml
+```
+
+###### The worker
+
+`worker` runs the background jobs: data fetching, model training, forecasting and the data
+backup. It runs two containers from the API image. `worker` drains the RQ queues and `cron`
+enqueues jobs on schedule. The queue lives in `redis-queue`, a second Redis with `noeviction` and
+an append-only file on `/mnt/aqra/queue`, kept apart from the cache Redis, which evicts keys.
+
+`flask` and `worker` mount the same `flask-data-pvc`. It is a `ReadWriteOnce` hostPath volume,
+so both pods must run on the same node. That holds on this single-node cluster; a second node
+would need a `ReadWriteMany` volume or a node affinity rule first.
+
+```
+kubectl logs -n aqra deploy/worker -c worker -f
+kubectl exec -n aqra deploy/worker -c worker -- rq info --url redis://redis-queue:6379/0
+kubectl exec -n aqra deploy/worker -c worker -- python3 -m worker bootstrap   # enqueue a job by hand
+```
+
+The nightly `flask-restart` CronJob is gone: it restarted the API to release memory the in-process
+training held. `kubectl apply -k` does not prune, so delete it once by hand:
+
+```
+kubectl delete cronjob flask-restart -n aqra --ignore-not-found
+kubectl delete rolebinding flask-restart-rolebinding -n aqra --ignore-not-found
+kubectl delete role flask-restart-role -n aqra --ignore-not-found
+kubectl delete serviceaccount flask-restart-sa -n aqra --ignore-not-found
 ```
 
 ###### Get deployed pods in namespace

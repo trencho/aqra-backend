@@ -1,4 +1,4 @@
-"""Regression test for ``src/api/config/git.merge_csv_files``.
+"""Regression test for ``src/backup.merge_csv_files``.
 
 The bug (A1): ``merge_csv_files`` used to feed ``read_csv_in_chunks`` the *value* of the
 buffers (``StringIO.getvalue()`` / ``Path(bytes)``) instead of the buffer objects, so
@@ -10,10 +10,7 @@ asserts a non-``None`` merged CSV comes back.
 
 from unittest.mock import Mock
 
-# Import the config package first so the api/preparation/processing chain initialises in
-# order — importing the ``api.config.git`` submodule first hits a circular import.
-import api.config  # noqa: F401
-from api.config.git import merge_csv_files
+from backup import merge_csv_files
 
 
 def test_merge_csv_files_returns_merged_csv_from_string_and_repo_bytes():

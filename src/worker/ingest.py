@@ -1,27 +1,22 @@
-from atexit import register
-from base64 import b64encode
-from datetime import datetime
-from json import dumps, loads
+"""Ingest jobs: the location catalogue, hourly readings, imports, and the startup rebuild."""
+
+from gc import collect
+from json import dumps
 from logging import getLogger
 from os import walk
 from pathlib import Path
 from shutil import unpack_archive
 
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from apscheduler.schedulers.background import BackgroundScheduler
-from sqlalchemy import create_engine
+from pandas import DataFrame
 
+from caching import cache
 from definitions import (
     COLLECTIONS,
     DATA_EXTERNAL_PATH,
     DATA_PATH,
-    DATA_PROCESSED_PATH,
     DATA_RAW_PATH,
-    MODELS_PATH,
     OPEN_WEATHER,
-    POLLUTANTS,
 )
-from modeling import train_regression_model
 from preparation import (
     api_is_available,
     fetch_cities,
@@ -32,84 +27,39 @@ from preparation import (
     read_sensors,
 )
 from processing import (
-    current_hour,
-    fetch_forecast_result,
+    find_missing_data,
     process_data,
     read_csv_in_chunks,
     save_dataframe,
 )
 from repository import get_repository
 from settings import get_settings
-from utils import BatchTally, track_time
+from utils import BatchOutcome, BatchTally, track_time
 
-from .cache import cache
-from .dump import generate_sql_dump
-from .git import append_commit_files, create_archive, update_git_files
+from .context import in_app_context
 
 logger = getLogger(__name__)
 
-scheduler = BackgroundScheduler()
-jobstore_name = "aqra"
-DATABASE_FILE = DATA_PATH / "jobs.sqlite"
 
-
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="dump_data",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    day="*/15",
-)
+@in_app_context
 @track_time
-def dump_data() -> None:
-    file_list, file_names = [], []
-    for root, directories, files in walk(DATA_PATH):
-        if not directories and files:
-            file_path = Path(f"{root}.zip")
-            create_archive(source=Path(root), destination=file_path)
-            data = b64encode(file_path.read_bytes())
-            append_commit_files(
-                file_list,
-                data,
-                Path(root).resolve().parent,
-                Path(file_path).name,
-                file_names,
-            )
-            file_path.unlink(missing_ok=True)
+def bootstrap() -> None:
+    """Refresh the location catalogue, then rebuild the local CSVs from the database.
 
-    if file_list:
-        update_git_files(
-            file_list,
-            file_names,
-            get_settings().repo_name,
-            "master",
-            f"Scheduled data dump - {datetime.now().strftime('%H:%M:%S %d-%m-%Y')}",
-        )
+    This ran inside the API's create_app() on every boot, which is why the flask pod needed a
+    fifteen-minute startup probe: gunicorn could not bind until it finished. The worker runs it
+    once when it starts instead, and the API serves whatever is on the volume meanwhile.
+
+    SKIP_DATA_FETCH skips it, so a worker can start offline.
+    """
+    if get_settings().skip_data_fetch:
+        logger.info("bootstrap: SKIP_DATA_FETCH is set; nothing fetched")
+        return
+    fetch_locations()
+    fetch_db_data()
 
 
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="dump_jobs",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    hour=0,
-)
-@track_time
-def dump_jobs() -> None:
-    dump_filename = "job_dump.sql"
-    dump_content = generate_sql_dump(DATABASE_FILE)
-
-    dump_path = DATA_PATH / dump_filename
-    dump_path.write_text(dump_content)
-
-
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="fetch_hourly_data",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    hour="*/2",
-)
+@in_app_context
 @track_time
 def fetch_hourly_data() -> None:
     if not api_is_available():
@@ -142,13 +92,7 @@ def fetch_hourly_data() -> None:
                         )
 
 
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="fetch_locations",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    hour=0,
-)
+@in_app_context
 @track_time
 def fetch_locations() -> None:
     countries = fetch_countries()
@@ -225,13 +169,7 @@ def fetch_locations() -> None:
                 )
 
 
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="import_data",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    hour=0,
-)
+@in_app_context
 def import_data() -> None:
     for root, _, files in walk(DATA_EXTERNAL_PATH):
         for file in files:
@@ -266,112 +204,72 @@ def import_data() -> None:
     DATA_EXTERNAL_PATH.mkdir(parents=True, exist_ok=True)
 
 
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="model_training",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    minute=0,
-)
-@track_time
-def model_training() -> None:
-    with BatchTally(logger, "model_training", "model") as tally:
-        for city in cache.get("cities") or read_cities():
-            for sensor in read_sensors(city["cityName"]):
-                for pollutant in tally.track(POLLUTANTS):
-                    tally.record(train_regression_model(city, sensor, pollutant))
-
-
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="predict_locations",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    minute=0,
-)
-@track_time
-def predict_locations() -> None:
-    with BatchTally(logger, "predict_locations (publish)", "sensor") as tally:
-        for city in cache.get("cities") or read_cities():
-            for sensor in tally.track(read_sensors(city["cityName"])):
-                file_path = (
-                    DATA_PROCESSED_PATH
-                    / city["cityName"]
-                    / sensor["sensorId"]
-                    / "predictions.json"
-                )
-                try:
-                    get_repository().save(
-                        collection_name="predictions",
-                        filter={
-                            "cityName": city["cityName"],
-                            "sensorId": sensor["sensorId"],
-                        },
-                        item={
-                            "data": loads(file_path.read_text()),
-                            "cityName": city["cityName"],
-                            "sensorId": sensor["sensorId"],
-                        },
-                    )
-                except Exception:
-                    tally.failure(
-                        f"Error occurred while updating forecast values from {file_path}",
-                    )
-
-    with BatchTally(logger, "predict_locations (forecast)", "sensor") as tally:
-        for city in cache.get("cities") or read_cities():
-            for sensor in tally.track(read_sensors(city["cityName"])):
-                try:
-                    forecast_result = fetch_forecast_result(city, sensor)
-                    (
-                        DATA_PROCESSED_PATH
-                        / city["cityName"]
-                        / sensor["sensorId"]
-                        / "predictions.json"
-                    ).write_text(
-                        dumps(list(forecast_result.values()), indent=4, default=str)
-                    )
-                except Exception:
-                    tally.failure(
-                        f"Error occurred while fetching forecast values for "
-                        f"{city['cityName']} - {sensor['sensorId']}",
-                    )
-
-
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="reset_api_counter",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    hour=0,
-)
 def reset_api_counter() -> None:
     (DATA_PATH / f"{OPEN_WEATHER}.lock").unlink(missing_ok=True)
 
 
-@scheduler.scheduled_job(
-    trigger="cron",
-    id="reset_model_lock",
-    misfire_grace_time=None,
-    jobstore=jobstore_name,
-    month="*/2",
-)
-def reset_model_lock() -> None:
-    for file in [
-        Path(root) / file
-        for root, _, files in walk(MODELS_PATH)
-        for file in files
-        if file.endswith(".lock")
-    ]:
-        last_modified = int(file.stat().st_mtime)
-        if last_modified < int(datetime.timestamp(current_hour())) - 3600:
-            (MODELS_PATH / file).unlink(missing_ok=True)
+# TODO: Review this method for inserting duplicate values
+def fetch_collection(collection: str, city_name: str, sensor_id: str) -> BatchOutcome:
+    db_records = DataFrame(
+        get_repository().get_many(
+            collection_name=collection,
+            filter={"sensorId": sensor_id},
+            projection={"_id": False, "sensorId": False},
+        )
+    )
+    if db_records.empty:
+        return BatchOutcome.SKIPPED
+
+    collection_dir = DATA_RAW_PATH / city_name / sensor_id
+    collection_dir.mkdir(parents=True, exist_ok=True)
+    collection_path = collection_dir / f"{collection}.csv"
+    try:
+        dataframe = read_csv_in_chunks(collection_path)
+        new_db_records = find_missing_data(db_records, dataframe, "time")
+        # The column-dtype conversion is deliberately unfinished, and this is its one record.
+        #
+        # `processing.handle_data` already carries the pieces for it -- `store_dtypes` writes
+        # `{collection}_dtypes.json`, `find_dtypes` reads it back, `convert_dtype` renders a cell --
+        # and all three are covered by tests but called from nowhere, because the conversion was
+        # never wired up here. `convert_dtype`'s docstring points at this function by name.
+        #
+        # It used to be recorded as five byte-identical `# TODO: Review this line for converting
+        # column data types` comments beside five commented-out `astype(column_dtypes, ...)` calls,
+        # which read as five separate chores rather than the one unresolved question it is: should
+        # these frames be dtype-cast on write, and should the merge de-duplicate on `time`? The
+        # other four are gone; this is the one that stays, next to the code it would change.
+        new_db_records.to_csv(collection_path, header=False, index=False, mode="a")
+
+        save_dataframe(dataframe, collection, collection_path, sensor_id)
+        del dataframe
+        return BatchOutcome.DONE
+    except Exception:
+        logger.exception(
+            f"Could not fetch data from local storage for {city_name} - {sensor_id} - {collection}",
+        )
+        # The records are still written, straight from the database rather than merged
+        # with local storage, so this is a degraded write and not a lost one -- but it is
+        # reported as FAILED because the merge it was asked to do did not happen.
+        db_records.to_csv(collection_path, index=False)
+        return BatchOutcome.FAILED
+    finally:
+        del db_records
+        collect()
 
 
-def init_scheduler() -> None:
-    db_url = f"sqlite:///{DATABASE_FILE}"
-    engine = create_engine(db_url)
-    jobstore = SQLAlchemyJobStore(engine=engine)
-    scheduler.add_jobstore(jobstore=jobstore, alias=jobstore_name)
-    scheduler.start()
-    register(lambda: scheduler.shutdown(wait=False))
+def fetch_db_data() -> None:
+    with BatchTally(logger, "fetch_db_data", "collection") as tally:
+        for city in read_cities():
+            for sensor in read_sensors(city["cityName"]):
+                for collection in tally.track(COLLECTIONS):
+                    try:
+                        tally.record(
+                            fetch_collection(
+                                collection, city["cityName"], sensor["sensorId"]
+                            )
+                        )
+                    except Exception:
+                        tally.failure(
+                            f"Could not fetch data from the database for {city['cityName']} - "
+                            f"{sensor['sensorId']} - {collection}",
+                        )
