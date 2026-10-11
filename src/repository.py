@@ -3,9 +3,10 @@ from logging import getLogger
 from uuid import uuid4
 
 from bson.objectid import ObjectId
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, MongoClient, UpdateOne
+from pymongo.errors import OperationFailure
 
-from definitions import COLLECTIONS
+from definitions import CHUNK_SIZE, COLLECTIONS
 from settings import get_settings
 
 logger = getLogger(__name__)
@@ -32,6 +33,22 @@ class Repository(ABC):
     def delete(self, collection_name, item) -> None:
         pass
 
+    @abstractmethod
+    def insert_missing(self, collection_name, items: list, keys: tuple) -> int:
+        """Insert each item whose `keys` are not stored yet; never overwrite. Returns the count.
+
+        Insert-only on purpose: it is what the old find-what-is-missing pass did, so an hour
+        OpenWeather revises in a later fetch keeps its first value, exactly as before.
+        """
+
+    @abstractmethod
+    def count(self, collection_name, filter=None) -> int:
+        """How many documents match, without loading them."""
+
+    @abstractmethod
+    def delete_duplicates(self, collection_name, keys: tuple) -> int:
+        """Keep one document per `keys` value, delete the rest. Returns how many went."""
+
     def ensure_indexes(self) -> None:
         """Create the indexes queries rely on. Nothing to do for a store without indexes."""
 
@@ -52,6 +69,21 @@ class RegularRepository(Repository):
         )
         for collection in COLLECTIONS:
             self.database[collection].create_index([("sensorId", ASCENDING)])
+            # One reading per sensor per hour. Older code could store an hour twice, and a
+            # collection holding duplicates cannot take a unique index, so log instead of
+            # stopping the app; the migration's dedupe lets the next start create it.
+            try:
+                self.database[collection].create_index(
+                    [("sensorId", ASCENDING), ("time", ASCENDING)],
+                    unique=True,
+                    name="sensorId_time_unique",
+                )
+            except OperationFailure:
+                logger.exception(
+                    "%s holds duplicate readings, so the unique (sensorId, time) index was "
+                    "not created; run `python -m worker.migrate` to remove them",
+                    collection,
+                )
 
     def get(self, collection_name, filter=None, **kwargs):
         collection = self.database[collection_name]
@@ -90,6 +122,46 @@ class RegularRepository(Repository):
         collection = self.database[collection_name]
         if item.id is not None:
             collection.delete_one({"_id": ObjectId(item.id)})
+
+    def insert_missing(self, collection_name, items: list, keys: tuple) -> int:
+        collection = self.database[collection_name]
+        upserted = 0
+        for start in range(0, len(items), CHUNK_SIZE):
+            operations = [
+                UpdateOne(
+                    {key: item[key] for key in keys},
+                    {"$setOnInsert": item},
+                    upsert=True,
+                )
+                for item in items[start : start + CHUNK_SIZE]
+            ]
+            upserted += collection.bulk_write(operations, ordered=False).upserted_count
+        return upserted
+
+    def count(self, collection_name, filter=None) -> int:
+        return self.database[collection_name].count_documents(filter or {})
+
+    def delete_duplicates(self, collection_name, keys: tuple) -> int:
+        collection = self.database[collection_name]
+        groups = collection.aggregate(
+            [
+                {
+                    "$group": {
+                        "_id": {key: f"${key}" for key in keys},
+                        "ids": {"$push": "$_id"},
+                        "count": {"$sum": 1},
+                    }
+                },
+                {"$match": {"count": {"$gt": 1}}},
+            ],
+            allowDiskUse=True,
+        )
+        deleted = 0
+        for group in groups:
+            deleted += collection.delete_many(
+                {"_id": {"$in": group["ids"][1:]}}
+            ).deleted_count
+        return deleted
 
 
 class InMemoryRepository(Repository):
@@ -179,6 +251,41 @@ class InMemoryRepository(Repository):
         else:
             if item.id in collection:
                 del collection[item.id]
+
+    def insert_missing(self, collection_name, items: list, keys: tuple) -> int:
+        collection = self.collections.setdefault(collection_name, {})
+        index = {
+            tuple(existing.get(key) for key in keys): existing
+            for existing in collection.values()
+            if isinstance(existing, dict)
+        }
+        upserted = 0
+        for item in items:
+            identity = tuple(item[key] for key in keys)
+            if identity in index:
+                continue
+            stored = dict(item)
+            stored["_id"] = str(uuid4())
+            collection[stored["_id"]] = stored
+            index[identity] = stored
+            upserted += 1
+        return upserted
+
+    def count(self, collection_name, filter=None) -> int:
+        return len(self.get_many(collection_name, filter))
+
+    def delete_duplicates(self, collection_name, keys: tuple) -> int:
+        collection = self.collections.get(collection_name, {})
+        seen, duplicates = set(), []
+        for item_id, item in collection.items():
+            identity = tuple(item.get(key) for key in keys)
+            if identity in seen:
+                duplicates.append(item_id)
+            else:
+                seen.add(identity)
+        for item_id in duplicates:
+            del collection[item_id]
+        return len(duplicates)
 
     @staticmethod
     def _matches_filter(item, filter) -> bool:

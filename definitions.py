@@ -69,6 +69,8 @@ ENV_PROD = "production"
 
 # Data configuration
 COLLECTIONS = ["weather", "pollution"]
+# What identifies one reading: a sensor and an hour. Unique in Mongo (repository.ensure_indexes).
+READING_KEYS = ("sensorId", "time")
 CHUNK_SIZE = 15000
 
 # Cache timeouts in seconds

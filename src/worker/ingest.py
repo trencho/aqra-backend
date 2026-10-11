@@ -16,6 +16,7 @@ from definitions import (
     DATA_PATH,
     DATA_RAW_PATH,
     OPEN_WEATHER,
+    READING_KEYS,
 )
 from preparation import (
     api_is_available,
@@ -27,10 +28,11 @@ from preparation import (
     read_sensors,
 )
 from processing import (
-    find_missing_data,
     process_data,
     read_csv_in_chunks,
     save_dataframe,
+    trim_dataframe,
+    write_csv_atomically,
 )
 from repository import get_repository
 from settings import get_settings
@@ -208,53 +210,66 @@ def reset_api_counter() -> None:
     (DATA_PATH / f"{OPEN_WEATHER}.lock").unlink(missing_ok=True)
 
 
-# TODO: Review this method for inserting duplicate values
-def fetch_collection(collection: str, city_name: str, sensor_id: str) -> BatchOutcome:
-    db_records = DataFrame(
+def _cache_path(collection: str, city_name: str, sensor_id: str) -> Path:
+    return DATA_RAW_PATH / city_name / sensor_id / f"{collection}.csv"
+
+
+def push_local_readings(
+    collection: str, city_name: str, sensor_id: str, dry_run: bool = False
+) -> int:
+    """Insert the cached readings the database lacks. Returns how many there are.
+
+    Idempotent: insert-if-missing on (sensorId, time). This is what makes the database the
+    source of truth without a separate cut-over: rows that only ever reached the local CSV (an
+    older deploy, a failed database write) are pushed up before the cache is rebuilt from the
+    database, so a rebuild can never lose them.
+    """
+    path = _cache_path(collection, city_name, sensor_id)
+    if not path.exists():
+        return 0
+    cached = read_csv_in_chunks(path)
+    if cached is None:
+        return 0
+    cached = trim_dataframe(cached.reset_index(drop=True), "time")
+    if dry_run:
+        stored = {
+            record["time"]
+            for record in get_repository().get_many(
+                collection_name=collection,
+                filter={"sensorId": sensor_id},
+                projection={"_id": False, "time": True},
+            )
+        }
+        return int((~cached["time"].isin(stored)).sum())
+    return get_repository().insert_missing(
+        collection,
+        cached.assign(sensorId=sensor_id).to_dict("records"),
+        READING_KEYS,
+    )
+
+
+def rebuild_cache(collection: str, city_name: str, sensor_id: str) -> BatchOutcome:
+    """Rewrite the sensor's raw CSV from the database, after pushing up what only it held.
+
+    The database refuses a second reading for an hour, so the cache is exactly what the
+    database holds, written atomically.
+    """
+    push_local_readings(collection, city_name, sensor_id)
+    records = DataFrame(
         get_repository().get_many(
             collection_name=collection,
             filter={"sensorId": sensor_id},
             projection={"_id": False, "sensorId": False},
         )
-    )
-    if db_records.empty:
+    ).drop(columns=["_id", "sensorId"], errors="ignore")
+    if records.empty:
         return BatchOutcome.SKIPPED
-
-    collection_dir = DATA_RAW_PATH / city_name / sensor_id
-    collection_dir.mkdir(parents=True, exist_ok=True)
-    collection_path = collection_dir / f"{collection}.csv"
-    try:
-        dataframe = read_csv_in_chunks(collection_path)
-        new_db_records = find_missing_data(db_records, dataframe, "time")
-        # The column-dtype conversion is deliberately unfinished, and this is its one record.
-        #
-        # `processing.handle_data` already carries the pieces for it -- `store_dtypes` writes
-        # `{collection}_dtypes.json`, `find_dtypes` reads it back, `convert_dtype` renders a cell --
-        # and all three are covered by tests but called from nowhere, because the conversion was
-        # never wired up here. `convert_dtype`'s docstring points at this function by name.
-        #
-        # It used to be recorded as five byte-identical `# TODO: Review this line for converting
-        # column data types` comments beside five commented-out `astype(column_dtypes, ...)` calls,
-        # which read as five separate chores rather than the one unresolved question it is: should
-        # these frames be dtype-cast on write, and should the merge de-duplicate on `time`? The
-        # other four are gone; this is the one that stays, next to the code it would change.
-        new_db_records.to_csv(collection_path, header=False, index=False, mode="a")
-
-        save_dataframe(dataframe, collection, collection_path, sensor_id)
-        del dataframe
-        return BatchOutcome.DONE
-    except Exception:
-        logger.exception(
-            f"Could not fetch data from local storage for {city_name} - {sensor_id} - {collection}",
-        )
-        # The records are still written, straight from the database rather than merged
-        # with local storage, so this is a degraded write and not a lost one -- but it is
-        # reported as FAILED because the merge it was asked to do did not happen.
-        db_records.to_csv(collection_path, index=False)
-        return BatchOutcome.FAILED
-    finally:
-        del db_records
-        collect()
+    write_csv_atomically(
+        trim_dataframe(records, "time"), _cache_path(collection, city_name, sensor_id)
+    )
+    del records
+    collect()
+    return BatchOutcome.DONE
 
 
 def fetch_db_data() -> None:
@@ -264,12 +279,12 @@ def fetch_db_data() -> None:
                 for collection in tally.track(COLLECTIONS):
                     try:
                         tally.record(
-                            fetch_collection(
+                            rebuild_cache(
                                 collection, city["cityName"], sensor["sensorId"]
                             )
                         )
                     except Exception:
                         tally.failure(
-                            f"Could not fetch data from the database for {city['cityName']} - "
-                            f"{sensor['sensorId']} - {collection}",
+                            f"Could not rebuild the cache from the database for "
+                            f"{city['cityName']} - {sensor['sensorId']} - {collection}",
                         )
