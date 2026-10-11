@@ -11,5 +11,7 @@ data:
   PYTHONPATH: "/app/src"
   REDIS_URL: "redis://redis:6379/0"
   REPO_NAME: "air-quality-data-dump"
+  # ingress-nginx, then the pod's nginx: two proxies append to X-Forwarded-For.
+  TRUSTED_PROXY_HOPS: "2"
   TZ: "Europe/Skopje"
   VOLUME_PATH: "/var/api"

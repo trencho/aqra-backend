@@ -1,0 +1,22 @@
+aqra-backend
+Copyright 2020 Aleksandar Trenchevski
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Data sources
+------------
+
+The API serves data derived from the following sources. Each keeps its own terms; this licence
+covers the code only.
+
+Air-quality sensor data: pulse.eco (https://pulse.eco).
+  Crowdsourced data, provided by pulse.eco without a guarantee of correctness.
+  "(c) pulse.eco. All rights reserved." No open reuse licence has been confirmed; the operator
+  is to confirm the terms of reuse with pulse.eco.
+
+Weather and air-pollution data: OpenWeather (https://openweathermap.org).
+  Licensed under the Open Database License (ODbL). Attribution: "Weather data (c) OpenWeather".
+  OpenWeather requires the attribution to be visible in the application, not only in legal pages.
+
+Map data (rendered by aqra-frontend): OpenStreetMap contributors
+  (https://www.openstreetmap.org/copyright), Open Database License (ODbL).

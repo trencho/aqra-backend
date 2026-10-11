@@ -1,0 +1,28 @@
+<meta charset="UTF-8">
+<title>{{ title }}</title>
+<!-- Overrides flasgger/ui3/templates/flasgger/head.html without its Google Fonts stylesheet,
+     which sent every Swagger UI visitor's IP address to Google. -->
+<link rel="stylesheet" type="text/css" href="{{ swagger_ui_css }}">
+<!-- Customize the app.config['SWAGGER']['favicon'] -->
+<link rel="icon" type="image/png" href="{{ favicon }}" sizes="64x64 32x32 16x16" />
+<style>
+    html
+    {
+    box-sizing: border-box;
+    overflow: -moz-scrollbars-vertical;
+    overflow-y: scroll;
+    }
+
+    *,
+    *:before,
+    *:after
+    {
+    box-sizing: inherit;
+    }
+
+    body
+    {
+    margin:0;
+    background: #fafafa;
+    }
+</style>

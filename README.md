@@ -19,7 +19,7 @@ Greece, Romania, Switzerland, and more); narrow the coverage with the `ENABLED_C
   RMSE.
 - **Plots**: rendered prediction and error plots per city/sensor/pollutant.
 - **Ops**: OpenAPI/Swagger UI, liveness/readiness health checks, CORS, caching (Redis or
-  filesystem), rate limiting, Prometheus metrics at `/metrics` (not routed by the
+  filesystem), per-client rate limiting, Prometheus metrics at `/metrics` (not routed by the
   ingress), and (in prod) an APScheduler pipeline that fetches data, trains models, and publishes
   forecasts on a cron.
 
@@ -186,6 +186,19 @@ what is already running: pinning tighter would roll the database on the next app
 pymongo 4.18 supports MongoDB 4.4 as its **minimum** server version. A pymongo release that raises
 that floor cuts the Kubernetes deployment off its database, so review pymongo bumps against the
 running Mongo version before merging them.
+
+## Data sources and legal
+
+- Air-quality readings come from [pulse.eco](https://pulse.eco), a crowdsourced network that does
+  not guarantee their correctness.
+- Weather and air-pollution forecasts come from [OpenWeather](https://openweathermap.org) under the
+  ODbL. Show "Weather data © OpenWeather" wherever you display them.
+- Forecasts are statistical estimates. Do not use them for health or safety decisions.
+- The code is Apache-2.0 ([`LICENSE`](LICENSE)); data attributions are in [`NOTICE`](NOTICE).
+- What the API records about visitors, and where, is in
+  [`docs/legal/data-processing-facts.md`](docs/legal/data-processing-facts.md). The API sets no
+  cookies.
+- Report vulnerabilities as described in [`SECURITY.md`](SECURITY.md).
 
 ## Roadmap
 
