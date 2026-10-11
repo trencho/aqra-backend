@@ -38,7 +38,7 @@ spec:
       # cheap.
       initContainers:
         - name: fix-data-ownership
-          image: ghcr.io/trencho/air-quality-rest-api:latest
+          image: ghcr.io/trencho/aqra-backend:latest
           imagePullPolicy: Always
           command: [ "chown", "-R", "1001:1001", "/var/api" ]
           securityContext:
@@ -62,7 +62,7 @@ spec:
           # `docker compose build` writes to Docker's image store while kubelet
           # reads containerd's -- so this Deployment sat in ErrImageNeverPull and
           # /api/v1/* returned 503. Same bug, same fix, as aqra-frontend PR #10.
-          image: ghcr.io/trencho/air-quality-rest-api:latest
+          image: ghcr.io/trencho/aqra-backend:latest
           imagePullPolicy: Always
           # This container cannot serve anything until a bulk data fetch finishes.
           # create_app() calls init_data() BEFORE returning (src/api/config/__init__.py),
