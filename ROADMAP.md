@@ -16,20 +16,15 @@ its first step. Items are ordered by value within each section. Finished work mo
 
 ## Frontend (aqra-frontend)
 
-1. **Legal pages and visible attribution.** Privacy, terms, cookies, data sources, disclaimer and
-   accessibility pages, with "Weather data © OpenWeather" and the OpenStreetMap credit in the footer
-   (OpenWeather requires visible attribution). First step: lazy-loaded routes outside the tab bar.
-2. **Self-host the Roboto font.** Google Fonts sends every visitor's IP to Google. First step:
-   `@fontsource/roboto` and delete the stylesheet link in `index.html`.
-3. **Model-accuracy panel** from the evaluation endpoints, and **prediction/error plots** via
+1. **Model-accuracy panel** from the evaluation endpoints, and **prediction/error plots** via
    `<img>` against the plots routes.
-4. **Weather history** next to pollution history: the backend already serves both on one route.
-5. **Country selection.** Cities outside North Macedonia are fetched and drawn off-screen.
-6. **Sensor health, a heatmap legend and an empty state**, so an offline sensor, an unreadable
-   colour and a missing forecast stop looking like app failures.
-7. **Deep-linkable map state**, then native share of a map view.
-8. **Distinguish "API down" from "no data"** with one readiness probe at boot.
-9. **Time-range control on Statistics.** The history routes already take `start_time` and
+2. **Weather history** next to pollution history: the backend already serves both on one route.
+3. **Country selection.** Cities outside North Macedonia are fetched and drawn off-screen.
+4. **Sensor health and an empty state**, so an offline sensor and a missing forecast stop looking
+   like app failures.
+5. **Deep-linkable map state**, then native share of a map view.
+6. **Distinguish "API down" from "no data"** with one readiness probe at boot.
+7. **Time-range control on Statistics.** The history routes already take `start_time` and
    `end_time` (one week at most).
 
 ### Items that change the privacy position
