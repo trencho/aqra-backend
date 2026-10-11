@@ -10,6 +10,7 @@ frozen when the module loaded would ignore them.
 
 from dataclasses import dataclass
 from os import cpu_count, environ
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from definitions import (
     APP_ENV,
@@ -25,8 +26,10 @@ from definitions import (
     MONGODB_CONNECTION,
     MONGODB_HOSTNAME,
     OPEN_WEATHER_TOKEN,
+    QUEUE_REDIS_PASSWORD,
     QUEUE_REDIS_URL,
     RATE_LIMIT_STORAGE_URI,
+    REDIS_PASSWORD,
     REDIS_URL,
     REPO_NAME,
     SKIP_DATA_FETCH,
@@ -60,9 +63,13 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             app_env=environ.get(APP_ENV, ENV_DEV),
-            redis_url=environ.get(REDIS_URL) or None,
+            redis_url=with_password(
+                environ.get(REDIS_URL), environ.get(REDIS_PASSWORD)
+            ),
             rate_limit_storage_uri=environ.get(RATE_LIMIT_STORAGE_URI) or None,
-            queue_redis_url=environ.get(QUEUE_REDIS_URL) or None,
+            queue_redis_url=with_password(
+                environ.get(QUEUE_REDIS_URL), environ.get(QUEUE_REDIS_PASSWORD)
+            ),
             trusted_proxy_hops=int(environ.get(TRUSTED_PROXY_HOPS, "1")),
             skip_data_fetch=environ.get(SKIP_DATA_FETCH, "").lower() in TRUTHY,
             enabled_countries=_enabled_countries(environ.get(ENABLED_COUNTRIES)),
@@ -72,6 +79,24 @@ class Settings:
             repo_name=environ.get(REPO_NAME) or None,
             mongo_uri=_mongo_uri(),
         )
+
+
+def with_password(url: str | None, password: str | None) -> str | None:
+    """`url` with `password` added as its credential, unless it already carries one.
+
+    Both Redis instances run with `requirepass`. The URLs sit in a config map and the passwords
+    in a secret, so the two are joined here, once, for every client: Flask-Caching, the rate
+    limiter, RQ and the worker's health probe.
+    """
+    if not url:
+        return None
+    if not password:
+        return url
+    parts = urlsplit(url)
+    if parts.password is not None:
+        return url
+    host = parts.netloc.rpartition("@")[2]
+    return urlunsplit(parts._replace(netloc=f":{quote(password, safe='')}@{host}"))
 
 
 def get_settings() -> Settings:

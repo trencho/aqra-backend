@@ -40,14 +40,22 @@ spec:
           # Kept on the same pinned tag as redis-deployment.yml; bump both by hand.
           image: redis:8.10.0-alpine
           imagePullPolicy: IfNotPresent
+          #
+          # requirepass matters most here: RQ stores jobs as pickles, so anyone who can write to
+          # this queue can run code in the worker. From redis-secret, required, as in
+          # redis-deployment.yml.
+          env:
+            - name: QUEUE_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: QUEUE_REDIS_PASSWORD
           command:
-            - redis-server
-            - "--appendonly"
-            - "yes"
-            - "--maxmemory"
-            - "256mb"
-            - "--maxmemory-policy"
-            - "noeviction"
+            - sh
+            - -c
+            - >-
+              exec redis-server --appendonly yes --maxmemory 256mb
+              --maxmemory-policy noeviction --requirepass "$QUEUE_REDIS_PASSWORD"
           ports:
             - containerPort: 6379
           # tcpSocket for the reason given in redis-deployment.yml: kubelet dials from outside.

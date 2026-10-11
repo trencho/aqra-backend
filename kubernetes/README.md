@@ -91,6 +91,21 @@ kubectl apply -f kubernetes/deployment/redis-queue-deployment.yml
 kubectl apply -f kubernetes/deployment/worker-deployment.yml
 ```
 
+###### Redis passwords (redis-secret)
+
+Both Redis instances run with `requirepass`, and `redis`, `redis-queue`, `flask` and `worker`
+all read `redis-secret`. A missing secret stops those pods from starting rather than running an
+open Redis, so create and seal it before the first deploy. `kubernetes/secrets/` is gitignored:
+
+```
+mkdir -p kubernetes/secrets
+kubectl create secret generic redis-secret -n aqra --dry-run=client -o yaml   --from-literal=REDIS_PASSWORD="$(openssl rand -hex 32)"   --from-literal=QUEUE_REDIS_PASSWORD="$(openssl rand -hex 32)" > kubernetes/secrets/redis-secret.yml
+kubeseal < kubernetes/secrets/redis-secret.yml -o yaml > kubernetes/sealed-secret/redis-sealed-secret.yml
+```
+
+Then add `sealed-secret/redis-sealed-secret.yml` to `kubernetes/kustomization.yml` and commit the
+sealed file. The plaintext under `kubernetes/secrets/` never leaves the machine.
+
 ###### The worker
 
 `worker` runs the background jobs: data fetching, model training, forecasting and the data
