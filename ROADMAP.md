@@ -5,9 +5,14 @@ its first step. Items are ordered by value within each section. Finished work mo
 
 ## Backend: architecture
 
-1. **Retire dead code.** `feature_imputation.py`, four regression models that
-   are never enabled, and helpers with no callers. First step: delete them with their tests, keeping
-   the test that pins `get_dummies` without `drop_first`.
+1. **One city/sensor lookup for the blueprints.** Seven copies of the same two 404 guards, each
+   with its own wording, drift as resources are added. First step: a helper in
+   `api/blueprints/__init__.py` that returns the city and sensor or the 404, taking the wording.
+2. **One OpenWeather fetcher.** `fetch_open_weather_data` and `fetch_pollution_data` repeat the
+   request, status check, quota lock and save. First step: extract the shared path behind the
+   existing tests in `tests/test_weather_data.py`.
+3. **Split `process_data`.** About 85 lines that read, merge, impute, compute AQI and write. First
+   step: extract the imputation and AQI steps under the existing processing tests.
 
 ## Backend: security and privacy
 
