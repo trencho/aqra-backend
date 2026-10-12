@@ -42,7 +42,7 @@ jobs:
       # Exact pin, unlike the major-tag pins elsewhere in this repo: astral-sh publishes floating
       # major tags only up to v7 while the current release is v10.1.0, so `@v10` does not resolve.
       # Same style as the osv-scanner pin below. Dependabot's github-actions ecosystem keeps it current.
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
       - name: Compile the dependency trees
         # WHY THESE ARE COMPILED HERE AND NOT COMMITTED.
