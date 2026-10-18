@@ -11,8 +11,14 @@ on:
   # Runs the tests against any ref without deploying it, e.g. master while the deploy is disabled.
   workflow_dispatch:
 
+# actions: read and pull-requests: read let build's `tested` step find the merged pull request and
+# its CI run. Without them those calls 403 and the step falls back to running the checks. Granted
+# here because `build` has no job-level block; `auto-merge` has its own block and ignores this one.
+# build-deploy.yml's `test` job already allows both as part of its ceiling.
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 # A newer push supersedes an in-flight run for the same ref. Never on master: the
 # deploy calls this workflow via `workflow_call`, and cancelling there would cancel
@@ -28,6 +34,50 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      # On master (the build-deploy.yml call) and on a dispatch, skips Black, Ruff and the tests when
+      # a pull request already passed them on this exact tree. All three must hold: this commit is a
+      # merged PR's merge commit, the PR head has the identical tree, and a pull_request run of
+      # ci.yml on that head succeeded. Everything else runs the checks: a direct push, a PR merged
+      # while behind master, a failed, missing or cancelled PR run, and any API error. On a pull
+      # request this step does not run, so its output is empty and every check runs. The owner
+      # accepted the cost on 2026-10-18: master no longer tries a second shuffle seed per merge.
+      - name: Check whether a pull request already tested this tree
+        id: tested
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          tested=false
+          reason="no merged pull request has this commit as its merge commit"
+          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            --jq "[.[] | select(.merge_commit_sha == \"$SHA\")][0] // empty | \"\(.number) \(.head.sha)\"") ||
+            { pr=""; reason="the pull request lookup failed"; }
+          if [ -n "$pr" ]; then
+            num=${pr%% *}
+            head=${pr##* }
+            merged_tree=$(gh api "repos/$REPO/git/commits/$SHA" --jq .tree.sha) || merged_tree=""
+            head_tree=$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha) || head_tree=""
+            if [ -z "$merged_tree" ] || [ "$merged_tree" != "$head_tree" ]; then
+              reason="#$num's head tree differs from the merged tree"
+            else
+              runs=$(gh api "repos/$REPO/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
+                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .conclusion == "success")] | length') ||
+                runs=""
+              if [ "${runs:-0}" -gt 0 ] 2>/dev/null; then
+                tested=true
+                reason="#$num's head ${head:0:7} has the same tree and its ci.yml run passed"
+              else
+                reason="#$num's head ${head:0:7} has no successful pull_request run of ci.yml"
+              fi
+            fi
+          fi
+          echo "tested=$tested" >> "$GITHUB_OUTPUT"
+          if [ "$tested" = true ]; then verdict="Formatting, lint and tests skipped"; else verdict="Formatting, lint and tests run"; fi
+          echo "$verdict: $reason"
+          echo "$verdict: $reason" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -51,9 +101,11 @@ jobs:
           pip install -r requirements/dev.txt
 
       - name: Check formatting (Black)
+        if: steps.tested.outputs.tested != 'true'
         run: black --check src tests definitions.py
 
       - name: Lint imports (Ruff)
+        if: steps.tested.outputs.tested != 'true'
         run: ruff check src tests definitions.py
 
       # Every run shuffles the tests (pytest-randomly), so a test that leans on another's leftovers
@@ -62,6 +114,7 @@ jobs:
       # the run summary name the seed. Reproduce locally with `pytest --randomly-seed=<seed>`.
       # pytest-randomly hands the seed to every xdist worker, so `-n logical` keeps one order.
       - name: Run tests
+        if: steps.tested.outputs.tested != 'true'
         env:
           SEED: ${{ github.run_id }}
         run: |

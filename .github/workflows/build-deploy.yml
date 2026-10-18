@@ -27,8 +27,9 @@ jobs:
     # A CEILING for the called workflow, not a grant to the tests. ci.yml's `auto-merge` job asks for
     # these three scopes, and GitHub rejects a call whose nested job asks for more than the caller
     # allows, even when that job's `if:` would skip it, which is always here (it runs on Dependabot
-    # pull requests only). ci.yml's top-level `permissions: contents: read` still applies to `build`,
-    # so the tests run with the read-only token they had before.
+    # pull requests only). ci.yml's top-level `permissions` (contents, actions and pull-requests, all
+    # read) still apply to `build`, so the tests run with a read-only token. The two read scopes are
+    # for its `tested` step, and this ceiling already covers them.
     permissions:
       contents: write
       pull-requests: write
