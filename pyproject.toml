@@ -32,7 +32,7 @@ known_first_party = [
 # `import` this codebase contains:
 #   gunicorn        production entrypoint runs it as a command
 #   black / ruff    formatter and linter, invoked by CI
-#   pytest, pytest-xdist, Flask-Testing   test tooling, invoked as commands
+#   pytest, pytest-xdist, pytest-randomly, Flask-Testing   test tooling, invoked as commands
 #   pandas-stubs / scipy-stubs            type stubs, consumed by the type checker only
 #   py-unused-deps  a dependency-analysis tool, invoked as a command
 #
@@ -43,6 +43,6 @@ known_first_party = [
 # visible rather than silenced. (The trees are no longer committed; security-scan.yml compiles
 # them and uploads them as a run artifact, so read one from there to re-check this.)
 DEP002 = [
-    "gunicorn", "black", "ruff", "pytest", "pytest-xdist", "Flask-Testing",
+    "gunicorn", "black", "ruff", "pytest", "pytest-xdist", "pytest-randomly", "Flask-Testing",
     "pandas-stubs", "scipy-stubs", "py-unused-deps",
 ]

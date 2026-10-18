@@ -56,8 +56,18 @@ jobs:
       - name: Lint imports (Ruff)
         run: ruff check src tests definitions.py
 
+      # Every run shuffles the tests (pytest-randomly), so a test that leans on another's leftovers
+      # fails here rather than after an unrelated rename reorders the suite. The seed is the run id,
+      # so a re-run replays the same order: fix the test, or dispatch CI for a new seed. The log and
+      # the run summary name the seed. Reproduce locally with `pytest --randomly-seed=<seed>`.
+      # pytest-randomly hands the seed to every xdist worker, so `-n logical` keeps one order.
       - name: Run tests
-        run: pytest
+        env:
+          SEED: ${{ github.run_id }}
+        run: |
+          echo "Shuffled test order, seed $SEED"
+          echo "Shuffled test order, seed \`$SEED\`" >> "$GITHUB_STEP_SUMMARY"
+          pytest -p randomly --randomly-seed="$SEED"
 
   # Lands a Dependabot PR once `build` passes. This replaced dependabot-auto-merge.yml, which polled
   # the check-runs API for named checks and paid for a sleep loop on every bot PR. As a job in this
