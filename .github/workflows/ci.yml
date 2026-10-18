@@ -11,8 +11,14 @@ on:
   # Runs the tests against any ref without deploying it, e.g. master while the deploy is disabled.
   workflow_dispatch:
 
+# actions: read and pull-requests: read let build's `tested` step find the merged pull request and
+# its CI jobs. Without them those calls 403 and the step falls back to running the checks. Granted
+# here because `build` has no job-level block; `auto-merge` has its own block and ignores this one.
+# build-deploy.yml's `test` job already allows both as part of its ceiling.
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 # A newer push supersedes an in-flight run for the same ref. Never on master: the
 # deploy calls this workflow via `workflow_call`, and cancelling there would cancel
@@ -28,6 +34,67 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      # Skips Black, Ruff and the tests when a pull request already passed them on this exact tree.
+      # The step runs only on a push to master (build-deploy.yml's call) or on a dispatch from
+      # `auto-merge`, which uses GITHUB_TOKEN and so triggers as github-actions[bot]. It skips only
+      # when all three hold: this commit is a merged PR's merge commit, the PR head has the
+      # identical tree, and a pull_request run of ci.yml on that head has its `build` job at
+      # success. The lookup reads the job, not the run, because `auto-merge` dispatches from inside
+      # the PR run before it concludes, and a failed dispatch fails that run with `build` green.
+      # Everything else runs the checks: a direct push, a PR merged while behind master, a failed,
+      # missing or cancelled `build`, and any API error. On a pull request or a manual dispatch the
+      # step does not run, its output is empty and every check runs, so dispatching CI by hand is
+      # the way to get an extra seed. The owner accepted the cost on 2026-10-18: master no longer
+      # tries a second shuffle seed per merge.
+      - name: Check whether a pull request already tested this tree
+        id: tested
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.triggering_actor == 'github-actions[bot]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          # The display name the jobs API reports for this job on a pull_request run.
+          JOB_NAME: build
+        run: |
+          tested=false
+          reason="no merged pull request has this commit as its merge commit"
+          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            --jq "[.[] | select(.merge_commit_sha == \"$SHA\")][0] // empty | \"\(.number) \(.head.sha)\"") ||
+            { pr=""; reason="the pull request lookup failed"; }
+          if [ -n "$pr" ]; then
+            num=${pr%% *}
+            head=${pr##* }
+            merged_tree=$(gh api "repos/$REPO/git/commits/$SHA" --jq .tree.sha) || merged_tree=""
+            head_tree=$(gh api "repos/$REPO/git/commits/$head" --jq .tree.sha) || head_tree=""
+            if [ -z "$merged_tree" ] || [ "$merged_tree" != "$head_tree" ]; then
+              reason="#$num's head tree differs from the merged tree"
+            elif ! runs=$(gh api "repos/$REPO/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
+              --jq '.workflow_runs[] | select(.path == ".github/workflows/ci.yml") | .id'); then
+              reason="the workflow run lookup for #$num's head failed"
+            else
+              reason="no successful '$JOB_NAME' job on #$num's head ${head:0:7}"
+              for id in $runs; do
+                if ! count=$(gh api "repos/$REPO/actions/runs/$id/jobs?filter=latest&per_page=100" \
+                  --jq "[.jobs[] | select(.name == \"$JOB_NAME\" and .conclusion == \"success\")] | length"); then
+                  reason="the job lookup for run $id failed"
+                  continue
+                fi
+                case $count in
+                  '' | *[!0-9]*) continue ;;
+                esac
+                if [ "$count" -gt 0 ]; then
+                  tested=true
+                  reason="#$num's head ${head:0:7} has the same tree and its '$JOB_NAME' job passed in run $id"
+                  break
+                fi
+              done
+            fi
+          fi
+          echo "tested=$tested" >> "$GITHUB_OUTPUT"
+          if [ "$tested" = true ]; then verdict="Formatting, lint and tests skipped"; else verdict="Formatting, lint and tests run"; fi
+          echo "$verdict: $reason"
+          echo "$verdict: $reason" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -51,9 +118,11 @@ jobs:
           pip install -r requirements/dev.txt
 
       - name: Check formatting (Black)
+        if: steps.tested.outputs.tested != 'true'
         run: black --check src tests definitions.py
 
       - name: Lint imports (Ruff)
+        if: steps.tested.outputs.tested != 'true'
         run: ruff check src tests definitions.py
 
       # Every run shuffles the tests (pytest-randomly), so a test that leans on another's leftovers
@@ -62,6 +131,7 @@ jobs:
       # the run summary name the seed. Reproduce locally with `pytest --randomly-seed=<seed>`.
       # pytest-randomly hands the seed to every xdist worker, so `-n logical` keeps one order.
       - name: Run tests
+        if: steps.tested.outputs.tested != 'true'
         env:
           SEED: ${{ github.run_id }}
         run: |
