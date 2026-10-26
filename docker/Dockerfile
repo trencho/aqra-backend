@@ -22,7 +22,7 @@
 # TO REVERT once the hypervisor exposes a modern CPU model: delete this stage
 # and the "Reinstall NumPy" step in the runtime image. Nothing else changed --
 # no version was downgraded, so there is nothing to restore.
-FROM python:3.14.8-slim AS numpy-builder
+FROM python:3.15.0-slim AS numpy-builder
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential && \
@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         "numpy==${NUMPY_VERSION}"
 
 
-FROM python:3.14.8-slim
+FROM python:3.15.0-slim
 
 LABEL maintainer="Aleksandar Trenchevski <atrenchevski@gmail.com>"
 
