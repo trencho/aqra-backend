@@ -7,5 +7,5 @@ pytest==9.1.1
 pytest-randomly==5.0.0
 pytest-xdist[psutil]==3.8.0
 py-unused-deps==0.4.2
-ruff==0.17.1
+ruff==0.17.2
 scipy-stubs==1.18.1.1
