@@ -2,10 +2,10 @@
 black==26.10.1
 fakeredis[lua]==2.40.0
 Flask-Testing==0.8.1
-pandas-stubs==3.0.5.260914
-pytest==9.1.1
+pandas-stubs==3.1.0.261029
+pytest==9.2.0
 pytest-randomly==5.0.0
 pytest-xdist[psutil]==3.8.0
 py-unused-deps==0.4.2
-ruff==0.17.2
+ruff==0.17.3
 scipy-stubs==1.18.1.1
