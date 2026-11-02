@@ -17,7 +17,7 @@ pymongo==4.18.3
 pytz==2026.6
 redis==8.1.0
 requests==2.34.2
-rq==2.12.0
+rq==3.0.0
 scikit-learn==1.9.1
 scipy==1.18.1
 seaborn==0.13.2
