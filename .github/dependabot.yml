@@ -21,6 +21,7 @@ updates:
     # Patches still flow; a minor or major waits until Mongo moves.
     ignore:
       - dependency-name: pymongo
+        # lift-when: manual the Kubernetes MongoDB moves past 4.4 (needs a node with AVX)
         update-types:
           - version-update:semver-minor
           - version-update:semver-major

@@ -36,13 +36,21 @@ known_first_party = [
 #   pandas-stubs / scipy-stubs            type stubs, consumed by the type checker only
 #   py-unused-deps  a dependency-analysis tool, invoked as a command
 #
-# NOT ignored, deliberately: `psutil`. It is declared in requirements/common.txt (production)
-# and referenced nowhere in the codebase; the compiled prod tree shows it arriving solely `via
-# -r requirements/common.txt`, so nothing else needs it there. Its only real use is as the
-# pytest-xdist[psutil] extra in dev.txt, which pulls it in on its own. The finding is left
-# visible rather than silenced. (The trees are no longer committed; security-scan.yml compiles
-# them and uploads them as a run artifact, so read one from there to re-check this.)
+#   fakeredis       imported only under tests/, which deptry excludes by default
+#   scipy           never imported directly; pinned so it moves in step with scipy-stubs (scikit-learn
+#                   needs it anyway)
+#
+# `psutil` used to sit in requirements/common.txt (production) with no import anywhere; the compiled
+# prod tree showed it arriving only `via -r requirements/common.txt`. Removed 2026-11-02. Dev still
+# gets it through the pytest-xdist[psutil] extra in dev.txt.
 DEP002 = [
     "gunicorn", "black", "ruff", "pytest", "pytest-xdist", "pytest-randomly", "Flask-Testing",
-    "pandas-stubs", "scipy-stubs", "py-unused-deps",
+    "pandas-stubs", "scipy-stubs", "py-unused-deps", "fakeredis", "scipy",
 ]
+
+# Distributions whose import name differs from the package name. Without this deptry reports each
+# one twice: DEP002 for the package and DEP001 for the import.
+[tool.deptry.package_module_name_map]
+PyGithub = "github"
+scikit-learn = "sklearn"
+pymongo = ["pymongo", "bson", "gridfs"]
