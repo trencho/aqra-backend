@@ -100,7 +100,7 @@ services:
       - mongo-data:/data/db
 
   redis:
-    image: redis:8.10.2-alpine
+    image: redis:8.10.3-alpine
     container_name: redis
     # requirepass, read from docker/.env (REDIS_PASSWORD; the app services get it the same way).
     # The command refuses to start on an empty value, because `--requirepass ""` means no
@@ -120,7 +120,7 @@ services:
   # The job queue. Separate from the cache Redis above: a queue must neither evict nor forget,
   # so this one refuses writes when full (noeviction) and keeps an append-only file.
   redis-queue:
-    image: redis:8.10.2-alpine
+    image: redis:8.10.3-alpine
     container_name: redis-queue
     # RQ jobs are pickles: write access to this queue is code execution in the worker.
     # QUEUE_REDIS_PASSWORD from docker/.env; an empty value refuses to start, as above.
