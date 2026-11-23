@@ -8,7 +8,7 @@ gunicorn==27.0.1
 haversine==2.9.0
 lightgbm==4.7.0
 matplotlib==3.11.2
-numpy==2.5.4
+numpy==2.5.5
 pandas==3.1.1
 prometheus-flask-exporter==0.23.2
 PyGithub==2.10.0
